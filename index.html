@@ -122,10 +122,16 @@
   }
   @keyframes fade{from{opacity:0}to{opacity:1}}
   .sheet{
-    width:100%;max-width:560px;max-height:92vh;overflow-y:auto;background:var(--surface);
+    width:100%;max-width:560px;max-height:92%;box-sizing:border-box;background:var(--surface);
     border-radius:22px 22px 0 0;padding:16px 16px calc(18px + var(--safe-b));
+    display:flex;flex-direction:column;
     animation:up .2s cubic-bezier(.2,.9,.2,1)
   }
+  .sheet > .grab,.sheet > h2{flex:0 0 auto}
+  .sheetbody{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0;margin:0 -4px;padding:0 4px}
+  .sheet .rowbtns{flex:0 0 auto;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .sheet .fixedfoot{flex:0 0 auto}
+  .sheet .totalrow{margin-top:10px}
   @keyframes up{from{transform:translateY(28px);opacity:.6}to{transform:none;opacity:1}}
   .sheet h2{margin:0 0 10px;font-size:20px}
   .sheet .grab{width:40px;height:4px;border-radius:99px;background:var(--line);margin:0 auto 12px}
@@ -143,6 +149,20 @@
   .qty .q{min-width:26px;text-align:center;font-weight:800;font-size:16px}
   .line .sub{width:72px;text-align:right;font-weight:700;font-size:15px}
 
+  .cashblock{margin-top:14px;padding:12px;border-radius:12px;background:rgba(95,103,34,.07);border:1px solid rgba(95,103,34,.16)}
+  .cashblock .lbl{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px}
+  .cashchips{display:flex;flex-wrap:wrap;gap:7px}
+  .cashchips button{flex:0 0 auto;padding:9px 13px;border-radius:9px;border:1px solid rgba(43,43,36,.16);
+    background:var(--surface);font:inherit;font-size:15px;font-weight:700;color:var(--ink);cursor:pointer}
+  .cashchips button.on{background:var(--olive);border-color:var(--olive);color:#fff}
+  .cashin{width:100%;margin-top:9px;padding:11px 13px;border-radius:10px;border:1px solid rgba(43,43,36,.18);
+    background:var(--surface);font:inherit;font-size:17px;font-weight:700;color:var(--ink)}
+  .cashin:focus{outline:2px solid var(--olive);outline-offset:-1px}
+  .changerow{display:flex;align-items:baseline;justify-content:space-between;margin-top:11px;
+    padding-top:10px;border-top:1px dashed rgba(95,103,34,.28)}
+  .changerow .k{font-size:14px;font-weight:700;color:var(--muted)}
+  .changerow .v{font-size:29px;font-weight:800;color:var(--olive);line-height:1;letter-spacing:-.5px}
+  .changerow .v.short{color:var(--danger);font-size:20px}
   .totalrow{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
   .totalrow .lb{font-size:16px;font-weight:700}
   .totalrow .amt{font-size:32px;font-weight:800;color:var(--olive);line-height:1}
@@ -547,11 +567,74 @@ function addToCart(id){
   render();
 }
 
+const PAYS = ['現金','PayMe','轉數快','其他'];
+const CASH_PRESETS = [100, 200, 500, 1000];
+
+let curPay = '現金';
+let cashGiven = 0;   // 客人俾幾多（0 = 未輸入）
+
 function openCart(){
   const ids = [...cart.keys()];
   if(!ids.length) return;
   overlayOpen = true;
+  curPay = '現金';
+  cashGiven = 0;
   paintCart();
+}
+
+// 找續區塊：快揀紙幣 + 手動輸入 + 即時找錢
+function cashBlockHtml(total){
+  const change = cashGiven > 0 ? cashGiven - total : null;
+  let changeHtml = '';
+  if(change === null){
+    changeHtml = `<div class="changerow"><div class="k">找續</div><div class="v" style="color:var(--muted);font-size:19px">輸入銀碼</div></div>`;
+  } else if(change < 0){
+    changeHtml = `<div class="changerow"><div class="k">仲欠</div><div class="v short">${money(Math.abs(change))}</div></div>`;
+  } else {
+    changeHtml = `<div class="changerow"><div class="k">找續</div><div class="v">${money(change)}</div></div>`;
+  }
+  // 快揀：剛好 / 下一個整數紙幣 / 500 / 1000
+  const presets = [total, ...CASH_PRESETS.filter(v => v > total)];
+  const uniq = [...new Set(presets.map(v => Math.round(v)))].slice(0, 5);
+  const chips = uniq.map(v =>
+    `<button class="${cashGiven === v ? 'on' : ''}" onclick="setCash(${v})">${v === total ? '啱啱好' : money(v)}</button>`
+  ).join('');
+  return `<div class="cashblock">
+    <div class="lbl">客人俾幾多（現金）</div>
+    <div class="cashchips">${chips}</div>
+    <input class="cashin" id="cashin" type="number" inputmode="decimal" min="0" step="1"
+      placeholder="或自己打銀碼" value="${cashGiven || ''}" oninput="onCashInput(this.value)">
+    ${changeHtml}
+  </div>`;
+}
+
+function setCash(v){
+  cashGiven = v;
+  paintCart();
+}
+
+function onCashInput(val){
+  // 只更新找續行，唔重繪成個 sheet（避免輸入框失焦）
+  cashGiven = Math.max(0, parseFloat(val) || 0);
+  const total = cartTotal();
+  const row = document.querySelector('#overlay .changerow');
+  if(!row) return;
+  const change = cashGiven > 0 ? cashGiven - total : null;
+  if(change === null){
+    row.innerHTML = `<div class="k">找續</div><div class="v" style="color:var(--muted);font-size:19px">輸入銀碼</div>`;
+  } else if(change < 0){
+    row.innerHTML = `<div class="k">仲欠</div><div class="v short">${money(Math.abs(change))}</div>`;
+  } else {
+    row.innerHTML = `<div class="k">找續</div><div class="v">${money(change)}</div>`;
+  }
+  // 同步快揀 chip 的選中狀態
+  document.querySelectorAll('#overlay .cashchips button').forEach(b => b.classList.remove('on'));
+}
+
+function cartTotal(){
+  let t = 0;
+  cart.forEach((q, id) => { const p = getProduct(id); if(p) t += p.price * q; });
+  return t;
 }
 
 function paintCart(doneSale){
@@ -560,13 +643,20 @@ function paintCart(doneSale){
     ov.innerHTML = `<div class="scrim" onclick="closeOverlay(event)">
       <div class="sheet" onclick="event.stopPropagation()">
         <div class="grab"></div>
-        <div class="done">
+        <div class="sheetbody"><div class="done">
           <div class="ic">✅</div>
           <div class="t">已收款</div>
           <div class="amt">${money(doneSale.total)}</div>
           <div class="items">${esc(doneSale.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
+          ${doneSale.change !== null && doneSale.change !== undefined ? `
+            <div style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(95,103,34,.09);border:1px solid rgba(95,103,34,.2)">
+              <div class="changerow" style="margin-top:0;padding-top:0;border-top:none">
+                <div class="k">收 ${money(doneSale.cashGiven)} · ${doneSale.change >= 0 ? '找' : '仲欠'}</div>
+                <div class="v">${money(Math.abs(doneSale.change))}</div>
+              </div>
+            </div>` : ''}
           <button class="btn-main" onclick="closeOverlay()">繼續開單</button>
-        </div>
+        </div></div>
       </div>
     </div>`;
     return;
@@ -595,13 +685,18 @@ function paintCart(doneSale){
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="grab"></div>
       <h2>今單</h2>
-      ${rows}
-      <div class="warn hidden" id="cartwarn"></div>
-      <div class="totalrow"><div class="lb">總數</div><div class="amt">${money(total)}</div></div>
-      <div style="margin-top:14px;font-size:13px;font-weight:700;color:var(--muted)">付款方式</div>
-      <div class="chips" id="paychips">
-        ${['現金','PayMe','轉數快','其他'].map((m,i)=>
-          `<button class="chip ${i===0?'on':''}" data-pay="${m}" onclick="pickPay(this)">${m}</button>`).join('')}
+      <div class="sheetbody">
+        ${rows}
+        <div class="warn hidden" id="cartwarn"></div>
+      </div>
+      <div class="fixedfoot">
+        <div class="totalrow"><div class="lb">總數</div><div class="amt">${money(total)}</div></div>
+        <div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--muted)">付款方式</div>
+        <div class="chips" id="paychips">
+          ${PAYS.map(m=>
+            `<button class="chip ${m===curPay?'on':''}" data-pay="${m}" onclick="pickPay(this)">${m}</button>`).join('')}
+        </div>
+        ${curPay === '現金' ? cashBlockHtml(total) : ''}
       </div>
       <div class="rowbtns">
         <button class="btn-ghost" onclick="clearCart()">清空</button>
@@ -609,13 +704,13 @@ function paintCart(doneSale){
       </div>
     </div>
   </div>`;
-  $('#overlay').dataset.pay = '現金';
+  $('#overlay').dataset.pay = curPay;
 }
 
 function pickPay(el){
-  [...el.parentNode.children].forEach(c => c.classList.remove('on'));
-  el.classList.add('on');
-  $('#overlay').dataset.pay = el.dataset.pay;
+  curPay = el.dataset.pay;
+  if(curPay !== '現金') cashGiven = 0;
+  paintCart();   // 重繪：現金區塊跟付款方式顯示／隱藏
 }
 
 function incQty(id){
@@ -651,7 +746,9 @@ function checkout(){
   });
   const sale = {
     id: uuid(), time: Date.now(), lines,
-    payMethod: $('#overlay').dataset.pay || '現金', note: '', total
+    payMethod: curPay, note: '', total,
+    cashGiven: curPay === '現金' && cashGiven > 0 ? cashGiven : null,
+    change: curPay === '現金' && cashGiven > 0 ? cashGiven - total : null
   };
   S.sales.push(sale);
   save();
@@ -933,6 +1030,7 @@ function renderSum(){
         <div class="top"><span class="t">${timeOf(sl.time)}</span>
           <span class="pay">${esc(sl.payMethod||'現金')}</span></div>
         <div class="items">${esc(sl.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
+        ${sl.change != null ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">收 ${money(sl.cashGiven)} · 找 ${money(sl.change)}</div>` : ''}
       </div>
       <div class="amt">${money(tot)}</div>
       <button class="del" onclick="delSale('${sl.id}')" title="取消單">✕</button>
@@ -1007,7 +1105,8 @@ function reportText(){
     L.push('', '單據：');
     s.sales.slice().sort((a,b)=>a.time-b.time).forEach(sl => {
       const tot = sl.lines.reduce((a,l) => a + l.unitPrice*l.qty, 0);
-      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}｜${sl.lines.map(l=>`${l.name}×${l.qty}`).join('、')}`);
+      const chg = sl.change != null ? `（收 ${money(sl.cashGiven)} 找 ${money(sl.change)}）` : '';
+      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}${chg}｜${sl.lines.map(l=>`${l.name}×${l.qty}`).join('、')}`);
     });
   }
   return L.join('\n');
