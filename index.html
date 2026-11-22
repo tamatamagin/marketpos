@@ -149,6 +149,40 @@
   .qty .q{min-width:26px;text-align:center;font-weight:800;font-size:16px}
   .line .sub{width:72px;text-align:right;font-weight:700;font-size:15px}
 
+  /* 收款碼：今單入面嘅撳鈕 */
+  .qrshow{margin-top:12px;width:100%;display:flex;align-items:center;gap:10px;padding:13px 14px;
+    border-radius:12px;border:1.5px solid var(--olive);background:rgba(95,103,34,.08);
+    font:inherit;font-size:14.5px;font-weight:800;color:var(--olive);text-align:left}
+  .qrshow .ic{font-size:19px;flex:0 0 auto}
+  .qrshow .tx{flex:1 1 auto;min-width:0}
+  .qrshow .ar{font-size:21px;opacity:.6;flex:0 0 auto}
+  .qrshow.empty{border-style:dashed;border-color:rgba(95,103,34,.42);background:rgba(95,103,34,.04);
+    color:var(--muted);font-weight:700;font-size:13.5px}
+
+  /* 全螢幕大 QR */
+  .qrfull{position:fixed;inset:0;z-index:90;background:#F7F3E8;display:flex;flex-direction:column;
+    padding:calc(10px + env(safe-area-inset-top,0px)) 16px calc(14px + var(--safe-b))}
+  .qftop{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto}
+  .qfl{font-size:17px;font-weight:800;color:var(--olive);letter-spacing:.3px}
+  .qfclose{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:19px;
+    background:rgba(43,43,36,.07);color:var(--ink)}
+  .qfb{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;min-height:0;padding:8px 0}
+  .qftotal{font-size:36px;font-weight:800;color:var(--ink);line-height:1;letter-spacing:-1px}
+  .qfbimg{width:auto;max-width:100%;max-height:min(58vh,340px);border-radius:14px;background:#fff;
+    padding:8px;box-shadow:0 4px 18px rgba(43,43,36,.16)}
+  .qfhint{font-size:14px;color:var(--muted);font-weight:700}
+  .qfback{flex:0 0 auto;width:100%;padding:15px;border-radius:14px;border:1.5px solid var(--line);
+    background:#fff;font:inherit;font-size:16px;font-weight:700;color:var(--ink)}
+  .qrcard{display:flex;gap:11px;align-items:center;padding:11px;border-radius:12px;background:var(--surface);
+    border:1px solid var(--line);margin-top:9px}
+  .qrcard .th{width:56px;height:56px;border-radius:9px;overflow:hidden;flex:0 0 auto;background:#F3EDE1;
+    display:grid;place-items:center;font-size:22px}
+  .qrcard .th img{width:100%;height:100%;object-fit:cover}
+  .qrcard .info{flex:1 1 auto;min-width:0}
+  .qrcard .nm{font-size:15px;font-weight:800}
+  .qrcard .st{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .qrcard .st.ok{color:var(--olive);font-weight:700}
   .cashblock{margin-top:14px;padding:12px;border-radius:12px;background:rgba(95,103,34,.07);border:1px solid rgba(95,103,34,.16)}
   .cashblock .lbl{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px}
   .cashchips{display:flex;flex-wrap:wrap;gap:7px}
@@ -306,6 +340,7 @@
 <div id="toast"></div>
 <input id="filepick" type="file" accept="image/*" class="hidden">
 <input id="restorepick" type="file" accept="application/json,.json" class="hidden">
+<input id="qrpick" type="file" accept="image/*" class="hidden">
 
 <script>
 /* =========================================================
@@ -342,11 +377,12 @@ const timeOf = ts => {
 };
 
 /* ---------- 資料 ---------- */
-let S = { products: [], sales: [], stallName: '我的檔口' };
+const BLANK = () => ({ products: [], sales: [], stallName: '我的檔口', qrCodes: {} });
+let S = BLANK();
 
 function load(){
   // 先重設，避免重複呼叫時留住舊資料（例如清空後再載入）
-  S = { products: [], sales: [], stallName: '我的檔口' };
+  S = BLANK();
   try{
     const raw = localStorage.getItem(KEY);
     if(raw){
@@ -354,12 +390,13 @@ function load(){
       S = {
         products: Array.isArray(o.products) ? o.products : [],
         sales: Array.isArray(o.sales) ? o.sales : [],
-        stallName: o.stallName || '我的檔口'
+        stallName: o.stallName || '我的檔口',
+        qrCodes: (o.qrCodes && typeof o.qrCodes === 'object') ? o.qrCodes : {}
       };
     }
   }catch(e){
     try{ localStorage.setItem(KEY + '.corrupt.' + Date.now(), localStorage.getItem(KEY)); }catch(_){}
-    S = { products: [], sales: [], stallName: '我的檔口' };
+    S = BLANK();
   }
   S.products.forEach(p => { if(p.sortOrder == null) p.sortOrder = 0; });
 }
@@ -434,7 +471,7 @@ function toast(msg){
 }
 
 /* ---------- 相片：壓縮 ---------- */
-function compressImage(file, maxSide=760, quality=0.72){
+function compressImage(file, maxSide=760, quality=0.72, format='jpeg'){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -445,8 +482,11 @@ function compressImage(file, maxSide=760, quality=0.72){
         w = Math.round(w * scale); h = Math.round(h * scale);
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(c.toDataURL('image/jpeg', quality));
+        const ctx = c.getContext('2d');
+        // PNG 一定要白底，唔可以透明（透明會變黑，掃唔到）
+        if(format === 'png'){ ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(format === 'png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -478,6 +518,7 @@ function renderTop(){
   } else if(tab === 'prod'){
     top.innerHTML = `<header class="topbar plain">
       <h1 class="grow" style="font-size:20px">貨品設定</h1>
+      <button class="iconbtn" onclick="openQrSettings()" title="收款碼">💳</button>
       <button class="iconbtn" onclick="openBackup()" title="資料備份">💾</button>
       <button class="iconbtn" onclick="askStallName()" title="改檔口名">🏪</button>
     </header>`;
@@ -567,7 +608,7 @@ function addToCart(id){
   render();
 }
 
-const PAYS = ['現金','PayMe','轉數快','其他'];
+const PAYS = ['現金','PayMe','轉數快','支付寶','其他'];
 const CASH_PRESETS = [100, 200, 500, 1000];
 
 let curPay = '現金';
@@ -580,6 +621,47 @@ function openCart(){
   curPay = '現金';
   cashGiven = 0;
   paintCart();
+}
+
+/* ---------- 收款碼 ---------- */
+const QR_PAYS = ['PayMe','轉數快','支付寶'];
+const PAY_LABEL = { 'PayMe':'PayMe', '轉數快':'轉數快 FPS', '支付寶':'支付寶 Alipay' };
+
+function qrBlockHtml(method){
+  if(!QR_PAYS.includes(method)) return '';
+  const qr = (S.qrCodes || {})[method];
+  if(qr){
+    return `<button class="qrshow" onclick="showQrFull('${method}')">
+      <span class="ic">▦</span>
+      <span class="tx">顯示 ${esc(PAY_LABEL[method] || method)} 收款碼俾客人掃</span>
+      <span class="ar">›</span>
+    </button>`;
+  }
+  return `<button class="qrshow empty" onclick="closeOverlay(); tab='prod'; render(); openQrSettings();">
+    <span class="ic">＋</span>
+    <span class="tx">仲未有${esc(method)}收款碼 · 撳呢度設定</span>
+    <span class="ar">›</span>
+  </button>`;
+}
+
+/* 全螢幕大 QR：俾客人自己掃 */
+function showQrFull(method){
+  const qr = (S.qrCodes || {})[method];
+  if(!qr) return;
+  const total = cartTotal();
+  overlayOpen = true;
+  $('#overlay').innerHTML = `<div class="qrfull">
+    <div class="qftop">
+      <div class="qfl">${esc(PAY_LABEL[method] || method)}</div>
+      <button class="qfclose" onclick="paintCart()" title="返回">✕</button>
+    </div>
+    <div class="qfb">
+      <div class="qftotal">${money(total)}</div>
+      <img class="qfbimg" src="${qr}" alt="${esc(method)} 收款碼">
+      <div class="qfhint">請客人掃碼付款</div>
+    </div>
+    <button class="qfback" onclick="paintCart()">‹ 返回今單</button>
+  </div>`;
 }
 
 // 找續區塊：快揀紙幣 + 手動輸入 + 即時找錢
@@ -696,7 +778,7 @@ function paintCart(doneSale){
           ${PAYS.map(m=>
             `<button class="chip ${m===curPay?'on':''}" data-pay="${m}" onclick="pickPay(this)">${m}</button>`).join('')}
         </div>
-        ${curPay === '現金' ? cashBlockHtml(total) : ''}
+        ${curPay === '現金' ? cashBlockHtml(total) : qrBlockHtml(curPay)}
       </div>
       <div class="rowbtns">
         <button class="btn-ghost" onclick="clearCart()">清空</button>
@@ -758,7 +840,7 @@ function checkout(){
 }
 
 function closeOverlay(e){
-  if(e && e.target !== e.currentTarget) return;
+  if(e && e.target && e.target !== e.currentTarget) return;
   overlayOpen = false;
   $('#overlay').innerHTML = '';
   render();
@@ -807,6 +889,67 @@ function prodRow(p, dim){
 }
 
 function toggleArchived(){ $('#archived').classList.toggle('hidden'); }
+
+/* ---------- 收款碼設定 ---------- */
+let qrPicking = null;   // 正揀緊邊個收款碼
+
+function openQrSettings(){
+  overlayOpen = true;
+  paintQrSettings();
+}
+
+function paintQrSettings(){
+  const cards = QR_PAYS.map(m => {
+    const qr = (S.qrCodes || {})[m];
+    return `<div class="qrcard">
+      <div class="th">${qr ? `<img src="${qr}" alt="">` : '▦'}</div>
+      <div class="info">
+        <div class="nm">${esc(PAY_LABEL[m] || m)}</div>
+        <div class="st ${qr ? 'ok' : ''}">${qr ? '✓ 已設定，開單時俾客人掃' : '未設定'}</div>
+      </div>
+      <button class="iconbtn" style="background:rgba(95,103,34,.1);color:var(--olive)"
+        onclick="pickQr('${m}')" title="上載收款碼">${qr ? '🔄' : '＋'}</button>
+      ${qr ? `<button class="iconbtn" style="background:rgba(176,58,58,.1);color:var(--danger)"
+        onclick="removeQr('${m}')" title="移除">✕</button>` : ''}
+    </div>`;
+  }).join('');
+
+  $('#overlay').innerHTML = `<div class="scrim" onclick="closeOverlay(event)">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <div class="grab"></div>
+      <h2>收款碼</h2>
+      <div class="sheetbody">
+        <div style="font-size:13.5px;color:var(--muted);line-height:1.6;margin-bottom:6px">
+          上載你嘅收款 QR code 截圖。開單揀到電子支付時，會自動彈出俾客人掃。
+        </div>
+        ${cards}
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:14px;
+          padding:10px;border-radius:10px;background:rgba(95,103,34,.06)">
+          <b>點攞 QR code？</b><br>
+          PayMe：PayMe app → 個人檔案 → 我的二維碼（截圖）<br>
+          轉數快 FPS：銀行 app → 轉數快／FPS → 我的二維碼<br>
+          支付寶：AlipayHK → 收款 → 儲存收款碼
+        </div>
+      </div>
+      <div class="rowbtns">
+        <button class="btn-main" onclick="closeOverlay()">完成</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function pickQr(method){
+  qrPicking = method;
+  const inp = document.getElementById('qrpick');
+  inp.value = '';
+  inp.click();
+}
+
+async function removeQr(method){
+  if(!confirm(`移除 ${PAY_LABEL[method] || method} 收款碼？`)) return;
+  delete S.qrCodes[method];
+  save(); paintQrSettings(); toast('已移除');
+}
 
 function openBackup(){
   overlayOpen = true;
@@ -1144,6 +1287,32 @@ function exportData(){
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   toast('已下載備份檔');
 }
+
+/* ---------- 收款碼：上載 ---------- */
+document.getElementById('qrpick').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!f || !qrPicking) return;
+  const method = qrPicking;
+  qrPicking = null;
+  try{
+    // QR 首選無損 PNG（截圖類通常 15–80KB）。
+    // 但影相拍嘅 QR 轉 PNG 會爆大（可達 1.8MB），所以設上限 400KB，
+    // 超標就退回高質 JPEG（0.92）——仍然夠清掃得到，但慳位好多。
+    let data = await compressImage(f, 1200, null, 'png');
+    const bytes = data.length * 0.75;
+    if(bytes > 400 * 1024){
+      data = await compressImage(f, 1200, 0.92, 'jpeg');
+    }
+    if(!S.qrCodes) S.qrCodes = {};
+    S.qrCodes[method] = data;
+    if(!save()) return;
+    paintQrSettings();
+    toast('已設定 ' + (PAY_LABEL[method] || method) + ' 收款碼');
+  }catch(err){
+    toast('上載失敗，試另一張相');
+  }
+});
 
 /* ---------- 還原備份 ---------- */
 $('#restorepick').addEventListener('change', e => {
