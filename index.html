@@ -149,6 +149,30 @@
   .qty .q{min-width:26px;text-align:center;font-weight:800;font-size:16px}
   .line .sub{width:72px;text-align:right;font-weight:700;font-size:15px}
 
+  /* 設定分頁 */
+  .setsec{margin-bottom:16px}
+  .setsec h3{margin:0 0 7px 4px;font-size:13px;font-weight:800;color:var(--muted);
+    letter-spacing:.6px;text-transform:none}
+  .setsec .hint{font-size:12.5px;color:var(--muted);margin:-2px 4px 8px;line-height:1.5}
+  .setrow{display:flex;align-items:center;gap:12px;width:100%;padding:13px 14px;
+    background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    margin-bottom:8px;font:inherit;text-align:left}
+  .setrow.tap:active{background:rgba(95,103,34,.06)}
+  .setrow .txt{flex:1 1 auto;min-width:0}
+  .setrow .nm{font-size:15.5px;font-weight:700;color:var(--ink)}
+  .setrow .sub{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+  .setrow .sub.ok{color:var(--olive);font-weight:700}
+  .setrow .sub.warn{color:#B07A1E;font-weight:700}
+  .setrow .chev{font-size:22px;color:var(--muted);opacity:.5;flex:0 0 auto}
+  .setrow .sw{appearance:none;-webkit-appearance:none;flex:0 0 auto;width:50px;height:30px;
+    border-radius:999px;background:#D6D0C2;position:relative;transition:background .16s;cursor:pointer}
+  .setrow .sw::after{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;
+    border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .16s}
+  .setrow .sw:checked{background:var(--olive)}
+  .setrow .sw:checked::after{transform:translateX(20px)}
+  .setsec .note{font-size:12.5px;color:var(--danger);font-weight:700;margin:2px 4px 0}
+  .setfoot{text-align:center;font-size:12px;color:var(--muted);margin:22px 0 8px}
+
   /* 收款碼：今單入面嘅撳鈕 */
   .qrshow{margin-top:12px;width:100%;display:flex;align-items:center;gap:10px;padding:13px 14px;
     border-radius:12px;border:1.5px solid var(--olive);background:rgba(95,103,34,.08);
@@ -377,7 +401,8 @@ const timeOf = ts => {
 };
 
 /* ---------- 資料 ---------- */
-const BLANK = () => ({ products: [], sales: [], stallName: '我的檔口', qrCodes: {} });
+const ALL_PAYS = ['現金','PayMe','轉數快','支付寶','其他'];
+const BLANK = () => ({ products: [], sales: [], stallName: '我的檔口', qrCodes: {}, enabledPays: ALL_PAYS.slice() });
 let S = BLANK();
 
 function load(){
@@ -391,7 +416,10 @@ function load(){
         products: Array.isArray(o.products) ? o.products : [],
         sales: Array.isArray(o.sales) ? o.sales : [],
         stallName: o.stallName || '我的檔口',
-        qrCodes: (o.qrCodes && typeof o.qrCodes === 'object') ? o.qrCodes : {}
+        qrCodes: (o.qrCodes && typeof o.qrCodes === 'object') ? o.qrCodes : {},
+        enabledPays: Array.isArray(o.enabledPays)
+          ? ALL_PAYS.filter(m => o.enabledPays.includes(m))
+          : ALL_PAYS.slice()
       };
     }
   }catch(e){
@@ -399,6 +427,8 @@ function load(){
     S = BLANK();
   }
   S.products.forEach(p => { if(p.sortOrder == null) p.sortOrder = 0; });
+  // 冇任何付款方式啟用 → 退回全部（唔可以開唔到單）
+  if(!Array.isArray(S.enabledPays) || !S.enabledPays.length) S.enabledPays = ALL_PAYS.slice();
 }
 function save(){
   try{
@@ -503,6 +533,7 @@ function render(){
   renderTop();
   if(tab === 'sell'){ renderSell(); }
   else if(tab === 'prod'){ renderProd(); }
+  else if(tab === 'set'){ renderSet(); }
   else { renderSum(); }
   renderBottom();
 }
@@ -518,9 +549,11 @@ function renderTop(){
   } else if(tab === 'prod'){
     top.innerHTML = `<header class="topbar plain">
       <h1 class="grow" style="font-size:20px">貨品設定</h1>
-      <button class="iconbtn" onclick="openQrSettings()" title="收款碼">💳</button>
-      <button class="iconbtn" onclick="openBackup()" title="資料備份">💾</button>
       <button class="iconbtn" onclick="askStallName()" title="改檔口名">🏪</button>
+    </header>`;
+  } else if(tab === 'set'){
+    top.innerHTML = `<header class="topbar plain">
+      <h1 class="grow" style="font-size:20px">設定</h1>
     </header>`;
   } else {
     top.innerHTML = `<header class="topbar plain">
@@ -546,11 +579,11 @@ function renderBottom(){
       <button class="btn-main" ${n ? '' : 'disabled'} onclick="openCart()">🧾 埋單</button>
     </div>
     <nav class="tabbar">
-      ${navBtn('sell','🛍','開單')}${navBtn('prod','📦','產品')}${navBtn('sum','📊','埋數')}
+      ${navBtn('sell','🛍','開單')}${navBtn('prod','📦','產品')}${navBtn('sum','📊','埋數')}${navBtn('set','⚙️','設定')}
     </nav>`;
   } else {
     b.innerHTML = `<nav class="tabbar">
-      ${navBtn('sell','🛍','開單')}${navBtn('prod','📦','產品')}${navBtn('sum','📊','埋數')}
+      ${navBtn('sell','🛍','開單')}${navBtn('prod','📦','產品')}${navBtn('sum','📊','埋數')}${navBtn('set','⚙️','設定')}
     </nav>`;
   }
 }
@@ -558,6 +591,84 @@ const navBtn = (id, ic, lb) =>
   `<button class="${tab===id?'on':''}" onclick="go('${id}')"><span class="ic">${ic}</span>${lb}</button>`;
 
 function go(t){ tab = t; render(); }
+
+/* ---------- 設定 ---------- */
+function renderSet(){
+  const v = $('#view');
+  const on = PAYS();
+  const qrSet = (S.qrCodes || {});
+  const qrCount = QR_PAYS.filter(m => qrSet[m]).length;
+
+  // 付款方式勾選
+  const payRows = ALL_PAYS.map(m => {
+    const active = on.includes(m);
+    const hasQr = !!qrSet[m];
+    const needQr = QR_PAYS.includes(m);
+    let sub = '';
+    if(!active) sub = '唔會喺開單出現';
+    else if(needQr) sub = hasQr ? '✓ 收款碼已設定' : '⚠ 未設定收款碼（開單時會提示）';
+    else sub = '啟用中';
+    return `<label class="setrow">
+      <div class="txt">
+        <div class="nm">${esc(m)}</div>
+        <div class="sub ${active ? (needQr && !hasQr ? 'warn' : 'ok') : ''}">${sub}</div>
+      </div>
+      <input type="checkbox" class="sw" ${active ? 'checked' : ''}
+        onchange="togglePay('${m}', this.checked)">
+    </label>`;
+  }).join('');
+
+  const onlyOne = on.length <= 1;
+
+  v.innerHTML = `
+    <div class="setsec">
+      <h3>檔口</h3>
+      <button class="setrow tap" onclick="askStallName()">
+        <div class="txt"><div class="nm">檔口名</div>
+          <div class="sub">${esc(S.stallName)}</div></div>
+        <div class="chev">›</div>
+      </button>
+    </div>
+
+    <div class="setsec">
+      <h3>收款方式</h3>
+      <div class="hint">唔剔嘅方式，開單時唔會顯示。</div>
+      ${payRows}
+      ${onlyOne ? '<div class="note">至少要啟用一種付款方式。</div>' : ''}
+    </div>
+
+    <div class="setsec">
+      <h3>收款碼</h3>
+      <button class="setrow tap" onclick="openQrSettings()">
+        <div class="txt"><div class="nm">PayMe / 轉數快 / 支付寶 收款碼</div>
+          <div class="sub ${qrCount === QR_PAYS.length ? 'ok' : ''}">${qrCount} / ${QR_PAYS.length} 已設定</div></div>
+        <div class="chev">›</div>
+      </button>
+    </div>
+
+    <div class="setsec">
+      <h3>資料</h3>
+      <button class="setrow tap" onclick="openBackup()">
+        <div class="txt"><div class="nm">資料備份</div>
+          <div class="sub">下載備份檔／還原 · 貨品 ${S.products.length} 件 · 單據 ${S.sales.length} 張</div></div>
+        <div class="chev">›</div>
+      </button>
+    </div>
+
+    <div class="setfoot">市集開單 · 資料只存喺呢部機</div>`;
+}
+
+function togglePay(method, on){
+  let cur = PAYS();
+  if(on){
+    if(!cur.includes(method)) cur.push(method);
+  } else {
+    if(cur.length <= 1){ toast('至少要啟用一種付款方式'); render(); return; }
+    cur = cur.filter(m => m !== method);
+  }
+  S.enabledPays = ALL_PAYS.filter(m => cur.includes(m));
+  save(); render();
+}
 
 /* ---------- 開單 ---------- */
 function renderSell(){
@@ -608,8 +719,13 @@ function addToCart(id){
   render();
 }
 
-const PAYS = ['現金','PayMe','轉數快','支付寶','其他'];
 const CASH_PRESETS = [100, 200, 500, 1000];
+
+// 只顯示檔主啟用咗嘅付款方式
+const PAYS = () => {
+  const on = Array.isArray(S.enabledPays) && S.enabledPays.length ? S.enabledPays : ALL_PAYS;
+  return ALL_PAYS.filter(m => on.includes(m));
+};
 
 let curPay = '現金';
 let cashGiven = 0;   // 客人俾幾多（0 = 未輸入）
@@ -618,7 +734,8 @@ function openCart(){
   const ids = [...cart.keys()];
   if(!ids.length) return;
   overlayOpen = true;
-  curPay = '現金';
+  const ps = PAYS();
+  curPay = ps.includes('現金') ? '現金' : (ps[0] || '現金');
   cashGiven = 0;
   paintCart();
 }
@@ -775,7 +892,7 @@ function paintCart(doneSale){
         <div class="totalrow"><div class="lb">總數</div><div class="amt">${money(total)}</div></div>
         <div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--muted)">付款方式</div>
         <div class="chips" id="paychips">
-          ${PAYS.map(m=>
+          ${PAYS().map(m=>
             `<button class="chip ${m===curPay?'on':''}" data-pay="${m}" onclick="pickPay(this)">${m}</button>`).join('')}
         </div>
         ${curPay === '現金' ? cashBlockHtml(total) : qrBlockHtml(curPay)}
