@@ -176,7 +176,13 @@
     background:#fff;text-align:center;font-size:17px;font-weight:800;color:var(--olive)}
   .bundle{background:var(--surface);border:1px solid var(--line);border-radius:13px;
     padding:12px;margin-bottom:8px}
-  .bundle .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+  .bundle .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .bundle .blabel{margin:8px 0 4px;font-size:12px;font-weight:700;color:var(--muted)}
+  .bundle .del2{flex:none;width:28px;height:34px;border-radius:8px;border:1px solid rgba(43,43,36,.16);
+    background:#fff;color:#9a3b32;font-size:13px;font-weight:800;cursor:pointer}
+  .bundle .additem{width:100%;margin-top:7px;padding:9px;border-radius:10px;cursor:pointer;
+    border:1px dashed rgba(95,103,34,.45);background:transparent;color:var(--green);
+    font-size:13px;font-weight:800;font-family:inherit}
   .bundle .hd .t{font-size:14px;font-weight:800}
   .bundle .hd .del{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
     background:rgba(166,58,44,.1);color:var(--danger);font-size:15px}
@@ -471,7 +477,9 @@ function load(){
           zhe = Math.min(100, Math.max(1, Math.round(zhe)));
           return {
             orderZhe: zhe,
-            bundles: Array.isArray(pr.bundles) ? pr.bundles.filter(b => b && b.productId) : []
+            bundles: Array.isArray(pr.bundles)
+              ? pr.bundles.filter(b => b && (b.productId || (Array.isArray(b.items) && b.items.length)))
+              : []
           };
         })()
       };
@@ -700,7 +708,10 @@ function renderSet(){
     <div class="setsec">
       <h3>優惠</h3>
       <div class="promonote">期間限定都得：做完想停，將折數改返 100（原價）或者刪走就得。開單時會自動計，唔使逐單撳。<br>
-      <b>三種做法</b>：打折（八五折）／每組減幾錢（兩件減 $20）／加購價（買 3 件每件 $29）。</div>
+      <b>組合優惠</b>：一個組合可以夾幾樣貨品，買齊就觸發。三種做法：<br>
+      · <b>全個組合打折</b> — 手機繩＋杯墊 一齊買 九折<br>
+      · <b>全個組合減幾錢</b> — 手機繩＋杯墊 一齊買 減 $30<br>
+      · <b>加購價</b> — 買手機繩，杯墊每件 $29（要揀「邊樣減價」）</div>
       <div class="pctwrap">
         <div class="lbl">全單折數</div>
         <input type="number" min="1" max="100" step="1" id="f-pct"
@@ -711,24 +722,28 @@ function renderSet(){
       ${bundles.length ? bundles.map((b, i) => `
         <div class="bundle">
           <div class="hd">
-            <div class="t">${esc(shortName(getProduct(b.productId)?.name || '已刪貨品'))} · ${esc(bundleLabel(b))}</div>
+            <div class="t">${esc(bundleLabel(b))}</div>
             <button class="del" onclick="delBundle(${i})" title="刪除">✕</button>
           </div>
-          <div class="gr">
-            <select onchange="updBundle(${i}, 'productId', this.value)">
-              ${activeProducts().map(p =>
-                `<option value="${p.id}" ${p.id === b.productId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-            </select>
-            <span class="u">買</span>
-            <input type="number" min="2" step="1" value="${b.qty}"
-              onchange="updBundle(${i}, 'qty', this.value)">
-            <span class="u">件</span>
-          </div>
-          <div class="gr" style="margin-top:7px">
+          <div class="blabel">組合內容（買齊呢幾樣就觸發）</div>
+          ${b.items.map((it, k) => `
+            <div class="gr">
+              <select onchange="updItem(${i}, ${k}, 'productId', this.value)">
+                ${activeProducts().map(p =>
+                  `<option value="${p.id}" ${p.id === it.productId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+              </select>
+              <span class="u">×</span>
+              <input type="number" min="1" step="1" value="${it.qty}"
+                onchange="updItem(${i}, ${k}, 'qty', this.value)">
+              ${b.items.length > 1
+                ? `<button class="del2" onclick="delItem(${i}, ${k})" title="移除">✕</button>` : ''}
+            </div>`).join('')}
+          <button class="additem" onclick="addItem(${i})">＋ 加多一樣貨品</button>
+          <div class="gr" style="margin-top:9px">
             <select onchange="updBundle(${i}, 'kind', this.value)">
-              <option value="pct" ${b.kind === 'pct' ? 'selected' : ''}>打折（折數）</option>
-              <option value="amt" ${b.kind === 'amt' ? 'selected' : ''}>每組減幾錢</option>
-              <option value="fixed" ${b.kind === 'fixed' ? 'selected' : ''}>加購價（每件幾錢）</option>
+              <option value="pct" ${b.kind === 'pct' ? 'selected' : ''}>全個組合打折</option>
+              <option value="amt" ${b.kind === 'amt' ? 'selected' : ''}>全個組合減幾錢</option>
+              <option value="fixed" ${b.kind === 'fixed' ? 'selected' : ''}>加購價（某樣每件幾錢）</option>
             </select>
             <input type="number" min="0" step="1" value="${b.value}"
               onchange="updBundle(${i}, 'value', this.value)">
@@ -737,8 +752,18 @@ function renderSet(){
               : b.kind === 'fixed' ? '蚊／件'
               : '折（85 = 八五折）'}</span>
           </div>
+          ${b.kind === 'fixed' ? `
+          <div class="gr" style="margin-top:7px">
+            <span class="u">邊樣減價</span>
+            <select onchange="updBundle(${i}, 'targetId', this.value)">
+              ${b.items.map(it => {
+                const p = getProduct(it.productId);
+                return `<option value="${it.productId}" ${it.productId === b.targetId ? 'selected' : ''}>${esc(p ? p.name : '已刪貨品')}</option>`;
+              }).join('')}
+            </select>
+          </div>` : ''}
         </div>`).join('') : ''}
-      <button class="addbundle" onclick="addBundle()">＋ 加指定貨品優惠</button>
+      <button class="addbundle" onclick="addBundle()">＋ 加組合優惠</button>
     </div>
 
     <div class="setsec">
@@ -767,6 +792,30 @@ function ensurePromo(){
   if(!S.promo || typeof S.promo !== 'object') S.promo = { orderZhe: 100, bundles: [] };
   if(!Number.isFinite(Number(S.promo.orderZhe)) || Number(S.promo.orderZhe) <= 0) S.promo.orderZhe = 100;
   if(!Array.isArray(S.promo.bundles)) S.promo.bundles = [];
+  // 舊版「單一貨品」格式 → 新「組合」格式（items 陣列），舊資料照用得
+  S.promo.bundles = S.promo.bundles.filter(Boolean).map(b => {
+    if(Array.isArray(b.items) && b.items.length){
+      b.items = b.items.filter(it => it && it.productId).map(it => ({
+        productId: it.productId,
+        qty: Math.max(1, Math.round(Number(it.qty) || 1))
+      }));
+      b.kind = (b.kind === 'amt' || b.kind === 'fixed') ? b.kind : 'pct';
+      b.value = Math.max(0, Number(b.value) || 0);
+      if(b.kind !== 'fixed') b.targetId = null;
+      else if(!b.targetId) b.targetId = b.items[b.items.length - 1].productId;
+      return b.items.length ? b : null;
+    }
+    if(b.productId){
+      const q = Math.max(1, Math.round(Number(b.qty) || 1));
+      return {
+        items: [{ productId: b.productId, qty: q }],
+        kind: (b.kind === 'amt' || b.kind === 'fixed') ? b.kind : 'pct',
+        value: Math.max(0, Number(b.value) || 0),
+        targetId: b.kind === 'fixed' ? b.productId : null
+      };
+    }
+    return null;
+  }).filter(Boolean);
   return S.promo;
 }
 
@@ -785,7 +834,60 @@ function addBundle(){
   const ps = activeProducts();
   if(!ps.length){ toast('先加貨品'); return; }
   const p = ensurePromo();
-  p.bundles.push({ productId: ps[0].id, qty: 2, kind: 'pct', value: 90 });  // 兩件九折
+  // 預設：第一個貨品買 2 件九折（最常用），可以再加其他貨品做組合
+  p.bundles.push({
+    items: [{ productId: ps[0].id, qty: 2 }],
+    kind: 'pct', value: 90, targetId: null
+  });
+  save(); render();
+}
+
+function addItem(i){
+  const p = ensurePromo();
+  const b = p.bundles[i];
+  if(!b) return;
+  const ps = activeProducts();
+  if(!ps.length){ toast('先加貨品'); return; }
+  // 揀一件未加入嘅貨品；全部加齊就提示
+  const used = new Set(b.items.map(it => it.productId));
+  const free = ps.find(x => !used.has(x.id));
+  if(!free){ toast('所有貨品都已經加入'); return; }
+  b.items.push({ productId: free.id, qty: 1 });
+  save(); render();
+}
+
+function delItem(i, k){
+  const p = ensurePromo();
+  const b = p.bundles[i];
+  if(!b || !b.items) return;
+  if(b.items.length <= 1){ toast('組合至少要有一樣貨品'); return; }
+  const gone = b.items[k].productId;
+  b.items.splice(k, 1);
+  if(b.targetId === gone) b.targetId = b.items[0].productId;
+  save(); render();
+}
+
+function updItem(i, k, key, val){
+  const p = ensurePromo();
+  const b = p.bundles[i];
+  if(!b || !b.items[k]) return;
+  const it = b.items[k];
+  if(key === 'productId'){
+    // 唔好同組合內另一行重複同一件貨品
+    if(b.items.some((x, idx) => idx !== k && x.productId === val)){
+      toast('呢件貨品已經喺組合入面'); render(); return;
+    }
+    it.productId = val;
+    if(b.targetId && !b.items.some(x => x.productId === b.targetId)){
+      b.targetId = b.items[0].productId;
+    }
+    if(b.kind === 'fixed'){
+      const np = getProduct(val);
+      if(np && Number(b.value) > np.price) b.value = Math.max(0, Math.round(np.price * 0.8));
+    }
+  } else if(key === 'qty'){
+    it.qty = Math.max(1, Math.round(Number(val) || 1));
+  }
   save(); render();
 }
 
@@ -793,36 +895,34 @@ function updBundle(i, key, val){
   const p = ensurePromo();
   const b = p.bundles[i];
   if(!b) return;
-  if(key === 'qty'){
-    b.qty = Math.max(2, Math.round(Number(val) || 2));
-  } else if(key === 'value'){
+  if(key === 'value'){
     let v = Math.max(0, Number(val) || 0);
-    if(b.kind === 'pct') v = Math.min(99, Math.max(1, Math.round(v)));  // 折數 1–99
-    else if(b.kind === 'fixed'){
+    if(b.kind === 'pct'){
+      v = Math.min(99, Math.max(1, Math.round(v)));
+    } else if(b.kind === 'fixed'){
       v = Math.round(v);
-      const prod = getProduct(b.productId);
-      // 加購價高過原價冇意思 → 封頂原價
-      if(prod && v > prod.price) v = prod.price;
+      const tp = getProduct(b.targetId);
+      if(tp && v > tp.price) v = tp.price;   // 加購價唔可以高過原價
     } else v = Math.round(v);
     b.value = v;
+  } else if(key === 'targetId'){
+    b.targetId = val;
+    const tp = getProduct(val);
+    if(tp && Number(b.value) > tp.price) b.value = Math.max(0, Math.round(tp.price * 0.8));
   } else {
     b[key] = val;
     if(key === 'kind'){
-      const prod = getProduct(b.productId);
       if(val === 'fixed'){
-        // 由折數／減錢轉做加購價 → 預設原價八折，避免 $90 呢類怪數字
-        const base = prod ? prod.price : 50;
-        b.value = Math.max(0, Math.round(base * 0.8));
+        // 預設減價對象 = 組合最後一樣貨品，價錢 = 該貨品八折
+        if(!b.targetId || !b.items.some(x => x.productId === b.targetId)){
+          b.targetId = b.items[b.items.length - 1].productId;
+        }
+        const tp = getProduct(b.targetId);
+        b.value = Math.max(0, Math.round((tp ? tp.price : 50) * 0.8));
       } else if(val === 'pct'){
         b.value = 90;
       } else {
         b.value = 20;
-      }
-    }
-    if(key === 'productId'){
-      const prod = getProduct(val);
-      if(b.kind === 'fixed' && prod && Number(b.value) > prod.price){
-        b.value = Math.max(0, Math.round(prod.price * 0.8));
       }
     }
   }
@@ -1013,67 +1113,129 @@ function onCashInput(val){
 ------------------------------------------------- */
 function activeBundles(){
   const bs = (S.promo && Array.isArray(S.promo.bundles)) ? S.promo.bundles : [];
-  return bs.filter(b => b && b.productId && Number(b.qty) > 0);
+  return bs.filter(b => b && Array.isArray(b.items) && b.items.length);
 }
 
-function bundleFor(pid){
-  return activeBundles().filter(b => b.productId === pid);
+// 某件貨品參與邊幾個組合
+function bundlesWith(pid){
+  return activeBundles().filter(b => b.items.some(it => it.productId === pid));
 }
+
+const clampZhe = v => {
+  let z = Number(v);
+  if(!Number.isFinite(z) || z <= 0) z = 100;
+  return Math.min(100, Math.max(1, z));
+};
+const r2 = n => Math.round(n * 100) / 100;
 
 function calcCart(){
+  // 1) 逐行計原價
   const lines = [];
-  let subtotal = 0, bundleSaved = 0;
-  const applied = [];
-
+  let subtotal = 0;
   cart.forEach((q, id) => {
     const p = getProduct(id);
     if(!p) return;
-    const gross = p.price * q;
+    const gross = r2(p.price * q);
     subtotal += gross;
-    let lineOff = 0;
-    let hit = null;
-
-    // 同一貨品可能有多條門檻（例如 2 件 9 折、3 件 85 折）→ 取最抵嘅一條
-    for(const b of bundleFor(id)){
-      if(q < Number(b.qty)) continue;
-      let off = 0;
-      if(b.kind === 'amt'){
-        // 每組減：例如「兩件減 $20」→ 買 4 件 = 2 組
-        const groups = Math.floor(q / Number(b.qty));
-        off = groups * Number(b.value || 0);
-      } else if(b.kind === 'fixed'){
-        // 加購價：買夠 N 件，每件以固定價錢計（例如每件 $29）
-        const unit = Math.max(0, Number(b.value || 0));
-        off = gross - (unit * q);
-      } else {
-        // value = 折數（90 = 九折、85 = 八五折）→ 實付 90%/85%
-        const zhe = Math.min(100, Math.max(1, Number(b.value || 100)));
-        off = gross * ((100 - zhe) / 100);
-      }
-      off = Math.min(off, gross);
-      if(off > lineOff){ lineOff = off; hit = b; }
-    }
-
-    bundleSaved += lineOff;
-    if(hit){
-      applied.push({ productId: id, name: p.name, qty: q,
-        desc: bundleLabel(hit), off: lineOff });
-    }
     lines.push({ productId: id, name: p.name, unitPrice: p.price, qty: q,
-      gross, lineOff, net: gross - lineOff });
+      gross, lineOff: 0, net: gross });
   });
+  subtotal = r2(subtotal);
 
-  const afterBundle = subtotal - bundleSaved;
-  let zhe = Number((S.promo && S.promo.orderZhe) || 100);
-  if(!Number.isFinite(zhe) || zhe <= 0) zhe = 100;
-  zhe = Math.min(100, Math.max(1, zhe));
-  const orderSaved = zhe < 100 ? afterBundle * ((100 - zhe) / 100) : 0;
-  const total = Math.max(0, afterBundle - orderSaved);
+  // 2) 逐個組合計優惠，再按原價比例分落各行
+  const applied = [];
+  const alloc = new Map();
+  for(const b of activeBundles()){
+    // 組合要幾多組？（每件貨品都要夠數）
+    let groups = Infinity;
+    for(const it of b.items){
+      const have = cart.get(it.productId) || 0;
+      groups = Math.min(groups, Math.floor(have / it.qty));
+    }
+    if(!Number.isFinite(groups) || groups < 1) continue;
+
+    // 一組嘅原價
+    let comboGross = 0, ok = true;
+    for(const it of b.items){
+      const p = getProduct(it.productId);
+      if(!p){ ok = false; break; }
+      comboGross += p.price * it.qty;
+    }
+    if(!ok || comboGross <= 0) continue;
+
+    if(b.kind === 'fixed'){
+      /* 加購價：買咗組合入面其他貨品，就令「指定貨品」嘅【全部件數】都用特價。
+         例：買手機繩 1 條 → 杯墊每件 $29，買 3 件杯墊就 3 件都 $29。
+         若組合只有指定貨品自己（單貨品加購價），門檻就睇自己件數。 */
+      const tid = b.targetId || b.items[b.items.length - 1].productId;
+      const tp = getProduct(tid);
+      const tHave = cart.get(tid) || 0;
+      if(!tp || tHave <= 0) continue;
+
+      const others = b.items.filter(it => it.productId !== tid);
+      let trigger;
+      if(others.length){
+        trigger = others.every(it => (cart.get(it.productId) || 0) >= Number(it.qty));
+      } else {
+        const tItem = b.items.find(it => it.productId === tid);
+        trigger = tHave >= Number(tItem ? tItem.qty : 1);
+      }
+      if(!trigger) continue;
+
+      const unit = Math.min(tp.price, Math.max(0, Number(b.value) || 0));
+      const off = r2(Math.min(tp.price * tHave, tHave * (tp.price - unit)));
+      if(off <= 0) continue;
+
+      alloc.set(tid, r2((alloc.get(tid) || 0) + off));
+      applied.push({ desc: bundleLabel(b), off, groups: 1 });
+      continue;
+    }
+
+    let off = 0;
+    if(b.kind === 'amt'){
+      off = groups * Math.max(0, Number(b.value) || 0);
+    } else {
+      const zhe = clampZhe(b.value);
+      off = groups * comboGross * ((100 - zhe) / 100);
+    }
+    off = r2(Math.min(off, groups * comboGross));
+    if(off <= 0) continue;
+
+    // 按各貨品原價比例分攤
+    const weights = b.items.map(it => {
+      const p = getProduct(it.productId);
+      return p ? p.price * it.qty * groups : 0;
+    });
+    const wsum = weights.reduce((a, c) => a + c, 0) || 1;
+    let left = off;
+    b.items.forEach((it, idx) => {
+      const share = idx === b.items.length - 1 ? left : r2(off * weights[idx] / wsum);
+      left = r2(left - share);
+      alloc.set(it.productId, r2((alloc.get(it.productId) || 0) + share));
+    });
+    applied.push({ desc: bundleLabel(b), off, groups });
+  }
+
+  // 3) 分攤額唔可以超過該行原價（多個組合重疊時）
+  let bundleSaved = 0;
+  for(const l of lines){
+    let off = Math.min(l.gross, alloc.get(l.productId) || 0);
+    off = r2(Math.max(0, off));
+    l.lineOff = off;
+    l.net = r2(l.gross - off);
+    bundleSaved += off;
+  }
+  bundleSaved = r2(bundleSaved);
+
+  const afterBundle = r2(subtotal - bundleSaved);
+  const zhe = clampZhe((S.promo && S.promo.orderZhe) || 100);
+  const orderSaved = zhe < 100 ? r2(afterBundle * ((100 - zhe) / 100)) : 0;
+  const total = r2(Math.max(0, afterBundle - orderSaved));
 
   return {
     lines, subtotal, bundleSaved, orderSaved, orderZhe: zhe,
     afterBundle, total, applied,
-    saved: bundleSaved + orderSaved,
+    saved: r2(bundleSaved + orderSaved),
     hasPromo: bundleSaved > 0 || orderSaved > 0
   };
 }
@@ -1097,10 +1259,33 @@ function shortName(n){
 }
 
 function bundleLabel(b){
-  const q = Number(b.qty), v = Number(b.value || 0);
-  if(b.kind === 'amt') return `買 ${q} 件減 ${money(v)}`;
-  if(b.kind === 'fixed') return `買 ${q} 件 · 每件 ${money(v)}`;
-  return `買 ${q} 件 ${zheLabel(v)}`;
+  const v = Number(b.value || 0);
+  const items = (b.items || []);
+  const names = items.map(it => {
+    const p = getProduct(it.productId);
+    const nm = shortName(p ? p.name : '已刪貨品');
+    return Number(it.qty) > 1 ? `${nm}×${it.qty}` : nm;
+  });
+  const combo = names.join(' ＋ ');
+  const multi = items.length > 1 || items.some(it => Number(it.qty) > 1);
+  if(b.kind === 'fixed'){
+    const tp = getProduct(b.targetId);
+    const tn = shortName(tp ? tp.name : '貨品');
+    const others = items.filter(it => it.productId !== b.targetId);
+    if(!others.length){
+      // 單貨品加購價：買夠 N 件每件特價
+      const self = items[0];
+      return `買 ${tn} ${Number(self?.qty) || 1} 件 · 每件 ${money(v)}`;
+    }
+    const cond = others.map(it => {
+      const p = getProduct(it.productId);
+      const nm = shortName(p ? p.name : '已刪貨品');
+      return Number(it.qty) > 1 ? `${nm}×${it.qty}` : nm;
+    }).join(' ＋ ');
+    return `買 ${cond} → ${tn} 每件 ${money(v)}`;
+  }
+  if(b.kind === 'amt') return multi ? `${combo} 減 ${money(v)}` : `${combo} 減 ${money(v)}`;
+  return multi ? `${combo} ${zheLabel(v)}` : `${combo} ${zheLabel(v)}`;
 }
 
 function cartTotal(){ return calcCart().total; }
