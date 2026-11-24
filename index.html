@@ -27,6 +27,8 @@
   }
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
   input,select,textarea{font-family:inherit;font-size:16px}
+  /* 示範文字（例如 $49、10、天使）調淺，唔好搶眼 */
+  input::placeholder,textarea::placeholder{color:#B5AF9C;opacity:1;font-weight:400}
 
   /* ---------- 版面 ---------- */
   #app{display:flex;flex-direction:column;height:100vh;height:100dvh}
@@ -148,6 +150,45 @@
   .qty button:active{background:#E2DCBE}
   .qty .q{min-width:26px;text-align:center;font-weight:800;font-size:16px}
   .line .sub{width:72px;text-align:right;font-weight:700;font-size:15px}
+
+  /* ---------- 優惠 ---------- */
+  .promobanner{margin:0 0 6px;padding:9px 12px;border-radius:10px;text-align:center;
+    background:rgba(166,58,44,.09);color:var(--danger);font-size:13.5px;font-weight:800}
+  .offtag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;
+    background:rgba(166,58,44,.1);color:var(--danger);font-size:11.5px;font-weight:800}
+  .line .sub s{display:block;font-size:11.5px;color:var(--muted);font-weight:600}
+  .promobox{margin-top:12px;padding:10px 12px;border-radius:11px;
+    background:rgba(166,58,44,.07);border:1px solid rgba(166,58,44,.18)}
+  .promobox .pr{display:flex;justify-content:space-between;align-items:center;
+    font-size:13.5px;font-weight:700;color:var(--danger)}
+  .promobox .pr + .pr{margin-top:4px}
+  .promobox .pr .v{font-weight:800}
+  .totalrow .orig{font-size:13px;font-weight:600;color:var(--muted);text-decoration:line-through;margin-left:5px}
+  .savedline{margin-top:2px;text-align:right;font-size:12.5px;font-weight:800;color:var(--danger)}
+  .doneoff{margin-top:5px;font-size:13.5px;font-weight:700;color:var(--danger)}
+
+  /* 優惠設定 */
+  .pctwrap{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface);
+    border:1px solid var(--line);border-radius:13px;margin-bottom:8px}
+  .pctwrap .lbl{flex:1;font-size:14.5px;font-weight:700}
+  .pctwrap .unit{font-size:15px;font-weight:800;color:var(--muted)}
+  .pctwrap input{width:82px;padding:9px 10px;border-radius:9px;border:1.5px solid var(--line);
+    background:#fff;text-align:center;font-size:17px;font-weight:800;color:var(--olive)}
+  .bundle{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    padding:12px;margin-bottom:8px}
+  .bundle .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+  .bundle .hd .t{font-size:14px;font-weight:800}
+  .bundle .hd .del{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+    background:rgba(166,58,44,.1);color:var(--danger);font-size:15px}
+  .bundle .gr{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .bundle select,.bundle input{padding:9px 10px;border-radius:9px;border:1.5px solid var(--line);
+    background:#fff;font-size:14px;font-weight:700;min-width:0}
+  .bundle select{flex:1 1 130px}
+  .bundle input{width:74px;text-align:center;font-weight:800;color:var(--olive)}
+  .bundle .u{font-size:13.5px;font-weight:700;color:var(--muted);flex:0 0 auto}
+  .addbundle{width:100%;padding:12px;border-radius:12px;border:1.5px dashed rgba(95,103,34,.42);
+    background:rgba(95,103,34,.05);font:inherit;font-size:14px;font-weight:800;color:var(--olive)}
+  .promonote{font-size:12.5px;color:var(--muted);line-height:1.55;margin:2px 4px 9px}
 
   /* 設定分頁 */
   .setsec{margin-bottom:16px}
@@ -402,7 +443,8 @@ const timeOf = ts => {
 
 /* ---------- 資料 ---------- */
 const ALL_PAYS = ['現金','PayMe','轉數快','支付寶','其他'];
-const BLANK = () => ({ products: [], sales: [], stallName: '我的檔口', qrCodes: {}, enabledPays: ALL_PAYS.slice() });
+const BLANK = () => ({ products: [], sales: [], stallName: '我的檔口', qrCodes: {},
+  enabledPays: ALL_PAYS.slice(), promo: { orderZhe: 100, bundles: [] } });
 let S = BLANK();
 
 function load(){
@@ -419,7 +461,19 @@ function load(){
         qrCodes: (o.qrCodes && typeof o.qrCodes === 'object') ? o.qrCodes : {},
         enabledPays: Array.isArray(o.enabledPays)
           ? ALL_PAYS.filter(m => o.enabledPays.includes(m))
-          : ALL_PAYS.slice()
+          : ALL_PAYS.slice(),
+        promo: (() => {
+          const pr = (o.promo && typeof o.promo === 'object') ? o.promo : {};
+          let zhe = Number(pr.orderZhe);
+          if(!Number.isFinite(zhe) || zhe <= 0) zhe = 100;      // 100 = 冇折
+          // 兼容舊版（orderPct = % off）
+          if(!pr.orderZhe && Number(pr.orderPct) > 0) zhe = 100 - Number(pr.orderPct);
+          zhe = Math.min(100, Math.max(1, Math.round(zhe)));
+          return {
+            orderZhe: zhe,
+            bundles: Array.isArray(pr.bundles) ? pr.bundles.filter(b => b && b.productId) : []
+          };
+        })()
       };
     }
   }catch(e){
@@ -459,15 +513,20 @@ function remaining(p){
 }
 function summaryFor(key){
   const day = S.sales.filter(s => dkey(s.time) === key);
-  let revenue = 0, items = 0;
+  let revenue = 0, items = 0, discount = 0, gross = 0;
   const perP = new Map(), perPay = new Map();
   for(const s of day){
-    const tot = s.lines.reduce((a,l) => a + l.unitPrice * l.qty, 0);
+    // 實收 = 單上嘅 total（已扣優惠）；舊單冇 total 就退回原價計
+    const lineGross = s.lines.reduce((a,l) => a + l.unitPrice * l.qty, 0);
+    const tot = (s.total != null) ? s.total : lineGross;
     revenue += tot;
+    gross += lineGross;
+    discount += (s.discount != null) ? s.discount : Math.max(0, lineGross - tot);
     for(const l of s.lines){
       items += l.qty;
+      const net = (l.net != null) ? l.net : l.unitPrice * l.qty;
       const p = perP.get(l.name) || { name: l.name, qty: 0, revenue: 0 };
-      p.qty += l.qty; p.revenue += l.unitPrice * l.qty;
+      p.qty += l.qty; p.revenue += net;
       perP.set(l.name, p);
     }
     const pay = s.payMethod || '現金';
@@ -476,7 +535,7 @@ function summaryFor(key){
     perPay.set(pay, b);
   }
   return {
-    key, revenue, orderCount: day.length, itemCount: items,
+    key, revenue, gross, discount, orderCount: day.length, itemCount: items,
     avgOrder: day.length ? revenue / day.length : 0,
     byProduct: [...perP.values()].sort((a,b) => b.qty - a.qty || b.revenue - a.revenue),
     byPayMethod: [...perPay.values()].sort((a,b) => b.revenue - a.revenue),
@@ -566,14 +625,13 @@ function renderTop(){
 function renderBottom(){
   const b = $('#bottom');
   if(tab === 'sell'){
-    let n = 0, t = 0;
-    cart.forEach((q, id) => {
-      const p = getProduct(id);
-      if(p){ n += q; t += p.price * q; }
-    });
+    let n = 0;
+    cart.forEach((q) => { n += q; });
+    const t = cartTotal();
+    const c0 = calcCart();
     b.innerHTML = `<div class="cartbar">
       <div class="l">
-        <div class="n">${n} 件</div>
+        <div class="n">${n} 件${c0.hasPromo ? ` · 慳 ${money(c0.saved)}` : ''}</div>
         <div class="t">${money(t)}</div>
       </div>
       <button class="btn-main" ${n ? '' : 'disabled'} onclick="openCart()">🧾 埋單</button>
@@ -598,6 +656,8 @@ function renderSet(){
   const on = PAYS();
   const qrSet = (S.qrCodes || {});
   const qrCount = QR_PAYS.filter(m => qrSet[m]).length;
+  const promo = S.promo || { orderZhe: 100, bundles: [] };
+  const bundles = Array.isArray(promo.bundles) ? promo.bundles : [];
 
   // 付款方式勾選
   const payRows = ALL_PAYS.map(m => {
@@ -638,6 +698,45 @@ function renderSet(){
     </div>
 
     <div class="setsec">
+      <h3>優惠</h3>
+      <div class="promonote">期間限定都得：做完想停，將折數改返 100（原價）或者刪走就得。開單時會自動計，唔使逐單撳。</div>
+      <div class="pctwrap">
+        <div class="lbl">全單折數</div>
+        <input type="number" min="1" max="100" step="1" id="f-pct"
+          value="${promo.orderZhe && promo.orderZhe < 100 ? promo.orderZhe : ''}"
+          placeholder="100" onchange="setOrderZhe(this.value)">
+        <div class="unit">折（90 = 九折）</div>
+      </div>
+      ${bundles.length ? bundles.map((b, i) => `
+        <div class="bundle">
+          <div class="hd">
+            <div class="t">指定貨品優惠 ${i + 1}</div>
+            <button class="del" onclick="delBundle(${i})" title="刪除">✕</button>
+          </div>
+          <div class="gr">
+            <select onchange="updBundle(${i}, 'productId', this.value)">
+              ${activeProducts().map(p =>
+                `<option value="${p.id}" ${p.id === b.productId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+            </select>
+            <span class="u">買</span>
+            <input type="number" min="2" step="1" value="${b.qty}"
+              onchange="updBundle(${i}, 'qty', this.value)">
+            <span class="u">件</span>
+          </div>
+          <div class="gr" style="margin-top:7px">
+            <select onchange="updBundle(${i}, 'kind', this.value)">
+              <option value="pct" ${b.kind !== 'amt' ? 'selected' : ''}>打折（折數）</option>
+              <option value="amt" ${b.kind === 'amt' ? 'selected' : ''}>每組減幾錢</option>
+            </select>
+            <input type="number" min="1" max="99" step="1" value="${b.value}"
+              onchange="updBundle(${i}, 'value', this.value)">
+            <span class="u">${b.kind === 'amt' ? '$' : '折（85 = 八五折）'}</span>
+          </div>
+        </div>`).join('') : ''}
+      <button class="addbundle" onclick="addBundle()">＋ 加指定貨品優惠</button>
+    </div>
+
+    <div class="setsec">
       <h3>收款碼</h3>
       <button class="setrow tap" onclick="openQrSettings()">
         <div class="txt"><div class="nm">PayMe / 轉數快 / 支付寶 收款碼</div>
@@ -656,6 +755,56 @@ function renderSet(){
     </div>
 
     <div class="setfoot">市集開單 · 資料只存喺呢部機</div>`;
+}
+
+/* ---------- 優惠設定 ---------- */
+function ensurePromo(){
+  if(!S.promo || typeof S.promo !== 'object') S.promo = { orderZhe: 100, bundles: [] };
+  if(!Number.isFinite(Number(S.promo.orderZhe)) || Number(S.promo.orderZhe) <= 0) S.promo.orderZhe = 100;
+  if(!Array.isArray(S.promo.bundles)) S.promo.bundles = [];
+  return S.promo;
+}
+
+function setOrderZhe(v){
+  const p = ensurePromo();
+  let n = Math.round(Number(v));
+  // 空白／打錯／負數 → 當「冇折」（100），唔好靜靜雞變成 1 折
+  if(!Number.isFinite(n) || n <= 0) n = 100;
+  n = Math.min(100, Math.max(1, n));
+  p.orderZhe = n;
+  save(); render();
+  toast(n >= 100 ? '已取消全單折扣' : `全單 ${zheLabel(n)}`);
+}
+
+function addBundle(){
+  const ps = activeProducts();
+  if(!ps.length){ toast('先加貨品'); return; }
+  const p = ensurePromo();
+  p.bundles.push({ productId: ps[0].id, qty: 2, kind: 'pct', value: 90 });  // 兩件九折
+  save(); render();
+}
+
+function updBundle(i, key, val){
+  const p = ensurePromo();
+  const b = p.bundles[i];
+  if(!b) return;
+  if(key === 'qty'){
+    b.qty = Math.max(2, Math.round(Number(val) || 2));
+  } else if(key === 'value'){
+    let v = Math.max(0, Number(val) || 0);
+    if(b.kind === 'pct') v = Math.min(99, Math.max(1, Math.round(v)));  // 折數 1–99
+    else v = Math.round(v);
+    b.value = v;
+  } else {
+    b[key] = val;
+  }
+  save(); render();
+}
+
+function delBundle(i){
+  const p = ensurePromo();
+  p.bundles.splice(i, 1);
+  save(); render(); toast('已刪除優惠');
 }
 
 function togglePay(method, on){
@@ -830,11 +979,92 @@ function onCashInput(val){
   document.querySelectorAll('#overlay .cashchips button').forEach(b => b.classList.remove('on'));
 }
 
-function cartTotal(){
-  let t = 0;
-  cart.forEach((q, id) => { const p = getProduct(id); if(p) t += p.price * q; });
-  return t;
+/* ---------- 優惠計算 ----------
+   規則：先計每件貨品嘅「指定數量優惠」，再用折後小計計「全單折扣」。
+   回傳每一步嘅減幾多，好讓畫面同單據都講得清。
+------------------------------------------------- */
+function activeBundles(){
+  const bs = (S.promo && Array.isArray(S.promo.bundles)) ? S.promo.bundles : [];
+  return bs.filter(b => b && b.productId && Number(b.qty) > 0);
 }
+
+function bundleFor(pid){
+  return activeBundles().filter(b => b.productId === pid);
+}
+
+function calcCart(){
+  const lines = [];
+  let subtotal = 0, bundleSaved = 0;
+  const applied = [];
+
+  cart.forEach((q, id) => {
+    const p = getProduct(id);
+    if(!p) return;
+    const gross = p.price * q;
+    subtotal += gross;
+    let lineOff = 0;
+    let hit = null;
+
+    // 同一貨品可能有多條門檻（例如 2 件 9 折、3 件 85 折）→ 取最抵嘅一條
+    for(const b of bundleFor(id)){
+      if(q < Number(b.qty)) continue;
+      let off = 0;
+      if(b.kind === 'amt'){
+        // 每組減：例如「兩件減 $20」→ 買 4 件 = 2 組
+        const groups = Math.floor(q / Number(b.qty));
+        off = groups * Number(b.value || 0);
+      } else {
+        // value = 折數（90 = 九折、85 = 八五折）→ 實付 90%/85%
+        const zhe = Math.min(100, Math.max(1, Number(b.value || 100)));
+        off = gross * ((100 - zhe) / 100);
+      }
+      off = Math.min(off, gross);
+      if(off > lineOff){ lineOff = off; hit = b; }
+    }
+
+    bundleSaved += lineOff;
+    if(hit){
+      applied.push({ productId: id, name: p.name, qty: q,
+        desc: bundleLabel(hit), off: lineOff });
+    }
+    lines.push({ productId: id, name: p.name, unitPrice: p.price, qty: q,
+      gross, lineOff, net: gross - lineOff });
+  });
+
+  const afterBundle = subtotal - bundleSaved;
+  let zhe = Number((S.promo && S.promo.orderZhe) || 100);
+  if(!Number.isFinite(zhe) || zhe <= 0) zhe = 100;
+  zhe = Math.min(100, Math.max(1, zhe));
+  const orderSaved = zhe < 100 ? afterBundle * ((100 - zhe) / 100) : 0;
+  const total = Math.max(0, afterBundle - orderSaved);
+
+  return {
+    lines, subtotal, bundleSaved, orderSaved, orderZhe: zhe,
+    afterBundle, total, applied,
+    saved: bundleSaved + orderSaved,
+    hasPromo: bundleSaved > 0 || orderSaved > 0
+  };
+}
+
+// 85 → 八五折；90 → 九折；95 → 九五折
+function zheLabel(v){
+  const n = Math.round(Number(v) || 0);
+  if(n >= 100) return '原價';
+  const digits = ['零','一','二','三','四','五','六','七','八','九'];
+  const s = String(n).padStart(2, '0');
+  let txt;
+  if(s[1] === '0') txt = digits[+s[0]];            // 90 → 九
+  else txt = digits[+s[0]] + digits[+s[1]];         // 85 → 八五
+  return txt + '折';
+}
+
+function bundleLabel(b){
+  const q = Number(b.qty), v = Number(b.value || 0);
+  if(b.kind === 'amt') return `買 ${q} 件減 ${money(v)}`;
+  return `買 ${q} 件 ${zheLabel(v)}`;
+}
+
+function cartTotal(){ return calcCart().total; }
 
 function paintCart(doneSale){
   const ov = $('#overlay');
@@ -846,6 +1076,7 @@ function paintCart(doneSale){
           <div class="ic">✅</div>
           <div class="t">已收款</div>
           <div class="amt">${money(doneSale.total)}</div>
+          ${doneSale.discount > 0 ? `<div class="doneoff">原價 ${money(doneSale.subtotal)} · 慳咗 ${money(doneSale.discount)}</div>` : ''}
           <div class="items">${esc(doneSale.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
           ${doneSale.change !== null && doneSale.change !== undefined ? `
             <div style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(95,103,34,.09);border:1px solid rgba(95,103,34,.2)">
@@ -860,36 +1091,47 @@ function paintCart(doneSale){
     </div>`;
     return;
   }
-  const rows = [...cart.entries()].map(([id, q]) => {
-    const p = getProduct(id);
+  const calc = calcCart();
+  const rows = calc.lines.map(l => {
+    const p = getProduct(l.productId);
     if(!p) return '';
     return `<div class="line">
       <div class="th">${p.image ? `<img src="${p.image}" alt="">` : '🖼'}</div>
       <div class="info">
-        <div class="n">${esc(p.name)}</div>
-        <div class="p">${money(p.price)} × ${q}</div>
+        <div class="n">${esc(l.name)}</div>
+        <div class="p">${money(l.unitPrice)} × ${l.qty}${l.lineOff > 0
+          ? ` <span class="offtag">−${money(l.lineOff)}</span>` : ''}</div>
       </div>
       <div class="qty">
-        <button onclick="decQty('${id}')">−</button>
-        <div class="q">${q}</div>
-        <button onclick="incQty('${id}')">+</button>
+        <button onclick="decQty('${l.productId}')">−</button>
+        <div class="q">${l.qty}</div>
+        <button onclick="incQty('${l.productId}')">+</button>
       </div>
-      <div class="sub">${money(p.price * q)}</div>
+      <div class="sub">${l.lineOff > 0
+        ? `<s>${money(l.gross)}</s>${money(l.net)}` : money(l.gross)}</div>
     </div>`;
   }).join('');
-  let total = 0;
-  cart.forEach((q, id) => { const p = getProduct(id); if(p) total += p.price * q; });
+  const total = calc.total;
 
   ov.innerHTML = `<div class="scrim" onclick="closeOverlay(event)">
     <div class="sheet" onclick="event.stopPropagation()">
       <div class="grab"></div>
       <h2>今單</h2>
+      ${promoBanner()}
       <div class="sheetbody">
         ${rows}
         <div class="warn hidden" id="cartwarn"></div>
       </div>
       <div class="fixedfoot">
-        <div class="totalrow"><div class="lb">總數</div><div class="amt">${money(total)}</div></div>
+        ${calc.hasPromo ? `<div class="promobox">
+          ${calc.bundleSaved > 0 ? `<div class="pr"><div class="k">貨品優惠</div><div class="v">−${money(calc.bundleSaved)}</div></div>` : ''}
+          ${calc.orderSaved > 0 ? `<div class="pr"><div class="k">全單 ${zheLabel(calc.orderZhe)}</div><div class="v">−${money(calc.orderSaved)}</div></div>` : ''}
+        </div>` : ''}
+        <div class="totalrow">
+          <div class="lb">${calc.hasPromo ? `總數 <span class="orig">${money(calc.subtotal)}</span>` : '總數'}</div>
+          <div class="amt">${money(total)}</div>
+        </div>
+        ${calc.hasPromo ? `<div class="savedline">慳咗 ${money(calc.saved)}</div>` : ''}
         <div style="margin-top:12px;font-size:13px;font-weight:700;color:var(--muted)">付款方式</div>
         <div class="chips" id="paychips">
           ${PAYS().map(m=>
@@ -904,6 +1146,16 @@ function paintCart(doneSale){
     </div>
   </div>`;
   $('#overlay').dataset.pay = curPay;
+}
+
+// 今單頂部：有優惠時顯示一句 banner，客人一眼睇到
+function promoBanner(){
+  const c = calcCart();
+  if(!c.hasPromo) return '';
+  const bits = [];
+  if(c.bundleSaved > 0) bits.push('貨品優惠');
+  if(c.orderSaved > 0) bits.push('全單' + zheLabel(c.orderZhe));
+  return `<div class="promobanner">🎉 ${bits.join(' + ')} · 慳 ${money(c.saved)}</div>`;
 }
 
 function pickPay(el){
@@ -935,17 +1187,21 @@ function clearCart(){ cart.clear(); closeOverlay(); render(); }
 
 function checkout(){
   if(!cart.size) return;
-  const lines = [];
-  let total = 0;
-  cart.forEach((q, id) => {
-    const p = getProduct(id);
-    if(!p) return;
-    lines.push({ productId: id, name: p.name, unitPrice: p.price, qty: q });
-    total += p.price * q;
-  });
+  const calc = calcCart();
+  const lines = calc.lines.map(l => ({
+    productId: l.productId, name: l.name, unitPrice: l.unitPrice, qty: l.qty,
+    gross: l.gross, discount: l.lineOff, net: l.net
+  }));
+  const total = calc.total;
   const sale = {
     id: uuid(), time: Date.now(), lines,
     payMethod: curPay, note: '', total,
+    subtotal: calc.subtotal,
+    discount: calc.saved,
+    bundleSaved: calc.bundleSaved,
+    orderZhe: calc.orderZhe,
+    orderSaved: calc.orderSaved,
+    promos: calc.applied.map(a => a.desc),
     cashGiven: curPay === '現金' && cashGiven > 0 ? cashGiven : null,
     change: curPay === '現金' && cashGiven > 0 ? cashGiven - total : null
   };
@@ -1284,15 +1540,18 @@ function renderSum(){
   }).join('');
 
   const saleRows = s.sales.map(sl => {
-    const tot = sl.lines.reduce((a,l) => a + l.unitPrice*l.qty, 0);
+    const lineGross = sl.lines.reduce((a,l) => a + l.unitPrice*l.qty, 0);
+    const tot = (sl.total != null) ? sl.total : lineGross;
+    const off = (sl.discount != null) ? sl.discount : Math.max(0, lineGross - tot);
     return `<div class="sale">
       <div class="info">
         <div class="top"><span class="t">${timeOf(sl.time)}</span>
-          <span class="pay">${esc(sl.payMethod||'現金')}</span></div>
+          <span class="pay">${esc(sl.payMethod||'現金')}</span>
+          ${off > 0 ? `<span class="offtag">優惠 −${money(off)}</span>` : ''}</div>
         <div class="items">${esc(sl.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
         ${sl.change != null ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">收 ${money(sl.cashGiven)} · 找 ${money(sl.change)}</div>` : ''}
       </div>
-      <div class="amt">${money(tot)}</div>
+      <div class="amt">${off > 0 ? `<s>${money(lineGross)}</s>${money(tot)}` : money(tot)}</div>
       <button class="del" onclick="delSale('${sl.id}')" title="取消單">✕</button>
     </div>`;
   }).join('');
@@ -1316,6 +1575,12 @@ function renderSum(){
         <div><div class="v">${money(Math.round(s.avgOrder))}</div><div class="k">平均單</div></div>
       </div>
     </div>
+
+    ${s.discount > 0 ? `<div class="sec"><h3>優惠</h3>
+      <div class="r"><div class="nm">原價總數</div><div class="v" style="color:var(--muted)">${money(s.gross)}</div></div>
+      <div class="r"><div class="nm">優惠減咗</div><div class="v b" style="color:var(--danger)">−${money(s.discount)}</div></div>
+      <div class="r"><div class="nm">實收</div><div class="v b">${money(s.revenue)}</div></div>
+    </div>` : ''}
 
     ${s.byPayMethod.length ? `<div class="sec"><h3>付款方式</h3>${payRows}</div>` : ''}
 
@@ -1353,6 +1618,9 @@ function reportText(){
   L.push(`【${S.stallName}】埋數 ${prettyDate(summaryDate)}`);
   L.push(`總收入：${money(s.revenue)}`);
   L.push(`單數：${s.orderCount}　件數：${s.itemCount}　平均單：${money(s.avgOrder)}`);
+  if(s.discount > 0){
+    L.push(`原價：${money(s.gross)}　優惠減：−${money(s.discount)}`);
+  }
   if(s.byPayMethod.length){
     L.push('', '付款方式：');
     s.byPayMethod.forEach(b => L.push(`· ${b.method}：${money(b.revenue)}（${b.count} 單）`));
@@ -1364,9 +1632,12 @@ function reportText(){
   if(s.sales.length){
     L.push('', '單據：');
     s.sales.slice().sort((a,b)=>a.time-b.time).forEach(sl => {
-      const tot = sl.lines.reduce((a,l) => a + l.unitPrice*l.qty, 0);
+      const lineGross = sl.lines.reduce((a,l) => a + l.unitPrice*l.qty, 0);
+      const tot = (sl.total != null) ? sl.total : lineGross;
+      const off = (sl.discount != null) ? sl.discount : Math.max(0, lineGross - tot);
       const chg = sl.change != null ? `（收 ${money(sl.cashGiven)} 找 ${money(sl.change)}）` : '';
-      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}${chg}｜${sl.lines.map(l=>`${l.name}×${l.qty}`).join('、')}`);
+      const offTxt = off > 0 ? `（原價 ${money(lineGross)} 優惠 −${money(off)}）` : '';
+      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}${chg}${offTxt}｜${sl.lines.map(l=>`${l.name}×${l.qty}`).join('、')}`);
     });
   }
   return L.join('\n');

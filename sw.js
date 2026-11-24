@@ -1,5 +1,5 @@
 /* 市集開單 — 離線快取 */
-const CACHE = 'marketpos-v5';
+const CACHE = 'marketpos-v6';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
