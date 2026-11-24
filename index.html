@@ -699,7 +699,8 @@ function renderSet(){
 
     <div class="setsec">
       <h3>優惠</h3>
-      <div class="promonote">期間限定都得：做完想停，將折數改返 100（原價）或者刪走就得。開單時會自動計，唔使逐單撳。</div>
+      <div class="promonote">期間限定都得：做完想停，將折數改返 100（原價）或者刪走就得。開單時會自動計，唔使逐單撳。<br>
+      <b>三種做法</b>：打折（八五折）／每組減幾錢（兩件減 $20）／加購價（買 3 件每件 $29）。</div>
       <div class="pctwrap">
         <div class="lbl">全單折數</div>
         <input type="number" min="1" max="100" step="1" id="f-pct"
@@ -710,7 +711,7 @@ function renderSet(){
       ${bundles.length ? bundles.map((b, i) => `
         <div class="bundle">
           <div class="hd">
-            <div class="t">指定貨品優惠 ${i + 1}</div>
+            <div class="t">${esc(shortName(getProduct(b.productId)?.name || '已刪貨品'))} · ${esc(bundleLabel(b))}</div>
             <button class="del" onclick="delBundle(${i})" title="刪除">✕</button>
           </div>
           <div class="gr">
@@ -725,12 +726,16 @@ function renderSet(){
           </div>
           <div class="gr" style="margin-top:7px">
             <select onchange="updBundle(${i}, 'kind', this.value)">
-              <option value="pct" ${b.kind !== 'amt' ? 'selected' : ''}>打折（折數）</option>
+              <option value="pct" ${b.kind === 'pct' ? 'selected' : ''}>打折（折數）</option>
               <option value="amt" ${b.kind === 'amt' ? 'selected' : ''}>每組減幾錢</option>
+              <option value="fixed" ${b.kind === 'fixed' ? 'selected' : ''}>加購價（每件幾錢）</option>
             </select>
-            <input type="number" min="1" max="99" step="1" value="${b.value}"
+            <input type="number" min="0" step="1" value="${b.value}"
               onchange="updBundle(${i}, 'value', this.value)">
-            <span class="u">${b.kind === 'amt' ? '$' : '折（85 = 八五折）'}</span>
+            <span class="u">${
+              b.kind === 'amt' ? '$'
+              : b.kind === 'fixed' ? '蚊／件'
+              : '折（85 = 八五折）'}</span>
           </div>
         </div>`).join('') : ''}
       <button class="addbundle" onclick="addBundle()">＋ 加指定貨品優惠</button>
@@ -793,10 +798,33 @@ function updBundle(i, key, val){
   } else if(key === 'value'){
     let v = Math.max(0, Number(val) || 0);
     if(b.kind === 'pct') v = Math.min(99, Math.max(1, Math.round(v)));  // 折數 1–99
-    else v = Math.round(v);
+    else if(b.kind === 'fixed'){
+      v = Math.round(v);
+      const prod = getProduct(b.productId);
+      // 加購價高過原價冇意思 → 封頂原價
+      if(prod && v > prod.price) v = prod.price;
+    } else v = Math.round(v);
     b.value = v;
   } else {
     b[key] = val;
+    if(key === 'kind'){
+      const prod = getProduct(b.productId);
+      if(val === 'fixed'){
+        // 由折數／減錢轉做加購價 → 預設原價八折，避免 $90 呢類怪數字
+        const base = prod ? prod.price : 50;
+        b.value = Math.max(0, Math.round(base * 0.8));
+      } else if(val === 'pct'){
+        b.value = 90;
+      } else {
+        b.value = 20;
+      }
+    }
+    if(key === 'productId'){
+      const prod = getProduct(val);
+      if(b.kind === 'fixed' && prod && Number(b.value) > prod.price){
+        b.value = Math.max(0, Math.round(prod.price * 0.8));
+      }
+    }
   }
   save(); render();
 }
@@ -1013,6 +1041,10 @@ function calcCart(){
         // 每組減：例如「兩件減 $20」→ 買 4 件 = 2 組
         const groups = Math.floor(q / Number(b.qty));
         off = groups * Number(b.value || 0);
+      } else if(b.kind === 'fixed'){
+        // 加購價：買夠 N 件，每件以固定價錢計（例如每件 $29）
+        const unit = Math.max(0, Number(b.value || 0));
+        off = gross - (unit * q);
       } else {
         // value = 折數（90 = 九折、85 = 八五折）→ 實付 90%/85%
         const zhe = Math.min(100, Math.max(1, Number(b.value || 100)));
@@ -1058,9 +1090,16 @@ function zheLabel(v){
   return txt + '折';
 }
 
+// 標題用：太長嘅貨名截短
+function shortName(n){
+  const s = String(n || '');
+  return s.length > 12 ? s.slice(0, 11) + '…' : s;
+}
+
 function bundleLabel(b){
   const q = Number(b.qty), v = Number(b.value || 0);
   if(b.kind === 'amt') return `買 ${q} 件減 ${money(v)}`;
+  if(b.kind === 'fixed') return `買 ${q} 件 · 每件 ${money(v)}`;
   return `買 ${q} 件 ${zheLabel(v)}`;
 }
 
