@@ -348,13 +348,22 @@
 
   .sale{
     background:var(--surface);border-radius:12px;padding:10px 6px 10px 14px;margin-top:8px;
-    display:flex;align-items:center;gap:8px;box-shadow:0 1px 2px rgba(43,43,36,.07)
+    display:flex;align-items:flex-start;gap:8px;box-shadow:0 1px 2px rgba(43,43,36,.07)
   }
   .sale .info{flex:1;min-width:0}
   .sale .info .top{display:flex;align-items:center;gap:8px}
   .sale .info .t{font-weight:800}
   .sale .info .pay{font-size:12px;background:var(--cream2);color:#5A5A4C;border-radius:6px;padding:1px 6px}
   .sale .info .items{font-size:13px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sale .slines{margin-top:6px;border-top:1px dashed rgba(43,43,36,.10);padding-top:5px}
+  .sale .sline{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    font-size:12.5px;line-height:1.75;color:var(--ink)}
+  .sale .sline .sn{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sale .sline .sn b{color:var(--muted);font-weight:700}
+  .sale .sline .sv{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .sale .sline .sv s{color:var(--muted);font-weight:600;margin-right:4px}
+  .sale .spromo{margin-top:5px;font-size:11.5px;font-weight:700;color:var(--green);
+    line-height:1.6;background:rgba(95,103,34,.07);border-radius:8px;padding:4px 7px}
   .sale .amt{font-weight:800;font-size:17px}
   .sale .del{width:34px;height:34px;border-radius:10px;color:var(--muted);font-size:18px;display:grid;place-items:center}
 
@@ -396,7 +405,30 @@
   .done .t{font-size:20px;font-weight:800;margin-top:6px}
   .done .amt{font-size:34px;font-weight:800;color:var(--olive);line-height:1.1}
   .done .items{font-size:14px;color:var(--muted);margin-top:6px}
-  .done .btn-main{width:100%;justify-content:center;margin-top:20px}
+  .done .doneoff{font-size:13px;font-weight:700;color:var(--green);margin-top:6px}
+  .doneitems{margin-top:16px;border-top:1px solid rgba(43,43,36,.12);padding-top:8px;text-align:left}
+  .doneitems .dline{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:6px 0;font-size:14px;border-bottom:1px dashed rgba(43,43,36,.10)}
+  .doneitems .dline:last-child{border-bottom:none}
+  .doneitems .dn{font-weight:700;color:var(--ink)}
+  .doneitems .dq{font-weight:700;color:var(--muted);font-size:13px}
+  .doneitems .dv{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .doneitems .dv s{color:var(--muted);font-weight:600;margin-right:6px}
+  .donepromo{margin-top:12px;padding:10px 12px;border-radius:12px;text-align:left;
+    background:rgba(95,103,34,.08);border:1px solid rgba(95,103,34,.22)}
+  .donepromo .dph{font-size:12px;font-weight:800;color:var(--green);margin-bottom:5px;letter-spacing:.04em}
+  .donepromo .dprow{font-size:13px;font-weight:600;color:var(--ink);line-height:1.65}
+  .donecalc{margin-top:10px;padding:10px 12px;border-radius:12px;text-align:left;
+    background:rgba(43,43,36,.045);border:1px solid rgba(43,43,36,.10)}
+  .donecalc .crow{display:flex;justify-content:space-between;gap:10px;
+    font-size:13px;line-height:1.85;color:var(--ink)}
+  .donecalc .crow .ck{font-weight:600;color:var(--muted)}
+  .donecalc .crow .cv{font-weight:800;font-variant-numeric:tabular-nums}
+  .donecalc .crow.tot{margin-top:4px;padding-top:5px;border-top:1px solid rgba(43,43,36,.14)}
+  .donecalc .crow.tot .ck{font-weight:800;color:var(--ink);font-size:14px}
+  .donecalc .crow.tot .cv{color:var(--olive);font-size:16px}
+  .sheet .rowbtns.one{display:flex}
+  .sheet .rowbtns.one .btn-main{flex:1;justify-content:center}
 
   .hidden{display:none !important}
 </style>
@@ -1128,6 +1160,50 @@ const clampZhe = v => {
 };
 const r2 = n => Math.round(n * 100) / 100;
 
+/* 揀最抵嘅組合配搭：
+   規則 — 同一件貨品最多只用一個組合，唔會兩張優惠疊加落同一件貨。
+         （例：天使唔會同時食「天使+聖誕樹 減$10」同「買100olive×2 → 天使每件$25」）
+   做法 — 喺所有組合之中搵總共減得最多、而貨品又唔撞嘅配搭。
+   幾多個組合都試勻（12 個以內準確求解），太多就退回由最抵開始揀。 */
+function pickBestCombos(cands){
+  const list = cands.slice();
+  const better = (a, b) => {          // a 係咪好過 b
+    if(a.total !== b.total) return a.total > b.total;
+    return a.covered > b.covered;     // 同分就揀多啲貨品有着數嗰個
+  };
+  if(list.length <= 12){
+    let best = { total: 0, covered: 0, picks: [] };
+    const n = list.length;
+    for(let mask = 1; mask < (1 << n); mask++){
+      const used = new Set();
+      let total = 0, covered = 0, picks = [], bad = false;
+      for(let i = 0; i < n; i++){
+        if(!(mask & (1 << i))) continue;
+        const c = list[i];
+        if(c.pids.some(pid => used.has(pid))){ bad = true; break; }
+        c.pids.forEach(pid => used.add(pid));
+        total = r2(total + c.off);
+        covered += c.pids.length;
+        picks.push(c);
+      }
+      if(bad) continue;
+      const cand = { total, covered, picks };
+      if(better(cand, best)) best = cand;
+    }
+    return best.picks;
+  }
+  // 組合太多：由最抵開始揀（快，但唔保證最抵）
+  const sorted = list.slice().sort((a,b) => (b.off - a.off) || (b.pids.length - a.pids.length));
+  const used = new Set();
+  const out = [];
+  for(const c of sorted){
+    if(c.pids.some(pid => used.has(pid))) continue;
+    c.pids.forEach(pid => used.add(pid));
+    out.push(c);
+  }
+  return out;
+}
+
 function calcCart(){
   // 1) 逐行計原價
   const lines = [];
@@ -1142,9 +1218,9 @@ function calcCart(){
   });
   subtotal = r2(subtotal);
 
-  // 2) 逐個組合計優惠，再按原價比例分落各行
-  const applied = [];
-  const alloc = new Map();
+  // 2) 逐個組合算出「如果只計呢個組合，各件貨品減幾多」
+  //    然後揀最抵嘅配搭：每件貨品最多只用一個組合，唔會疊加。
+  const cands = [];
   for(const b of activeBundles()){
     // 組合要幾多組？（每件貨品都要夠數）
     let groups = Infinity;
@@ -1162,6 +1238,8 @@ function calcCart(){
       comboGross += p.price * it.qty;
     }
     if(!ok || comboGross <= 0) continue;
+
+    const alloc = new Map();
 
     if(b.kind === 'fixed'){
       /* 加購價：買咗組合入面其他貨品，就令「指定貨品」嘅【全部件數】都用特價。
@@ -1186,8 +1264,8 @@ function calcCart(){
       const off = r2(Math.min(tp.price * tHave, tHave * (tp.price - unit)));
       if(off <= 0) continue;
 
-      alloc.set(tid, r2((alloc.get(tid) || 0) + off));
-      applied.push({ desc: bundleLabel(b), off, groups: 1 });
+      alloc.set(tid, off);
+      cands.push({ b, off, alloc, pids: [tid], desc: bundleLabel(b), groups: 1 });
       continue;
     }
 
@@ -1213,7 +1291,16 @@ function calcCart(){
       left = r2(left - share);
       alloc.set(it.productId, r2((alloc.get(it.productId) || 0) + share));
     });
-    applied.push({ desc: bundleLabel(b), off, groups });
+    cands.push({ b, off, alloc, pids: b.items.map(it => it.productId), desc: bundleLabel(b), groups });
+  }
+
+  // 3) 揀最抵嘅組合配搭：同一件貨品唔會同時食兩個組合（唔疊加）
+  const picked = pickBestCombos(cands);
+  const alloc = new Map();
+  const applied = [];
+  for(const c of picked){
+    c.alloc.forEach((v, pid) => alloc.set(pid, r2((alloc.get(pid) || 0) + v)));
+    applied.push({ desc: c.desc, off: c.off, groups: c.groups });
   }
 
   // 3) 分攤額唔可以超過該行原價（多個組合重疊時）
@@ -1301,7 +1388,29 @@ function paintCart(doneSale){
           <div class="t">已收款</div>
           <div class="amt">${money(doneSale.total)}</div>
           ${doneSale.discount > 0 ? `<div class="doneoff">原價 ${money(doneSale.subtotal)} · 慳咗 ${money(doneSale.discount)}</div>` : ''}
-          <div class="items">${esc(doneSale.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
+          <div class="doneitems">
+            ${doneSale.lines.map(l => `
+              <div class="dline">
+                <div class="dn">${esc(l.name)} <span class="dq">×${l.qty}</span></div>
+                <div class="dv">${l.discount > 0
+                  ? `<s>${money(l.gross)}</s>${money(l.net)}`
+                  : money(l.gross)}</div>
+              </div>`).join('')}
+          </div>
+          ${(doneSale.promos && doneSale.promos.length) ? `
+            <div class="donepromo">
+              <div class="dph">用咗嘅優惠</div>
+              ${doneSale.promos.map(pr => `<div class="dprow">· ${esc(pr)}</div>`).join('')}
+              ${doneSale.orderZhe && doneSale.orderZhe < 100
+                ? `<div class="dprow">· 全單 ${zheLabel(doneSale.orderZhe)}（−${money(doneSale.orderSaved || 0)}）</div>` : ''}
+            </div>` : ''}
+          ${doneSale.discount > 0 ? `
+            <div class="donecalc">
+              <div class="crow"><div class="ck">原價合計</div><div class="cv">${money(doneSale.subtotal)}</div></div>
+              ${doneSale.bundleSaved > 0 ? `<div class="crow"><div class="ck">組合優惠</div><div class="cv">−${money(doneSale.bundleSaved)}</div></div>` : ''}
+              ${doneSale.orderSaved > 0 ? `<div class="crow"><div class="ck">全單 ${zheLabel(doneSale.orderZhe)}</div><div class="cv">−${money(doneSale.orderSaved)}</div></div>` : ''}
+              <div class="crow tot"><div class="ck">實收</div><div class="cv">${money(doneSale.total)}</div></div>
+            </div>` : ''}
           ${doneSale.change !== null && doneSale.change !== undefined ? `
             <div style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(95,103,34,.09);border:1px solid rgba(95,103,34,.2)">
               <div class="changerow" style="margin-top:0;padding-top:0;border-top:none">
@@ -1309,8 +1418,10 @@ function paintCart(doneSale){
                 <div class="v">${money(Math.abs(doneSale.change))}</div>
               </div>
             </div>` : ''}
-          <button class="btn-main" onclick="closeOverlay()">繼續開單</button>
         </div></div>
+        <div class="rowbtns one">
+          <button class="btn-main" onclick="closeOverlay()">繼續開單</button>
+        </div>
       </div>
     </div>`;
     return;
@@ -1772,8 +1883,22 @@ function renderSum(){
         <div class="top"><span class="t">${timeOf(sl.time)}</span>
           <span class="pay">${esc(sl.payMethod||'現金')}</span>
           ${off > 0 ? `<span class="offtag">優惠 −${money(off)}</span>` : ''}</div>
-        <div class="items">${esc(sl.lines.map(l=>`${l.name}×${l.qty}`).join('、'))}</div>
-        ${sl.change != null ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">收 ${money(sl.cashGiven)} · 找 ${money(sl.change)}</div>` : ''}
+        <div class="slines">
+          ${sl.lines.map(l => {
+            const g = l.gross != null ? l.gross : l.unitPrice * l.qty;
+            const d = l.discount || 0;
+            const n = l.net != null ? l.net : g - d;
+            return `<div class="sline">
+              <span class="sn">${esc(l.name)} <b>×${l.qty}</b></span>
+              <span class="sv">${d > 0 ? `<s>${money(g)}</s>${money(n)}` : money(g)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        ${(sl.promos && sl.promos.length) ? `<div class="spromo">
+          ${sl.promos.map(pr => `<div>· ${esc(pr)}</div>`).join('')}
+          ${sl.orderZhe && sl.orderZhe < 100 ? `<div>· 全單 ${zheLabel(sl.orderZhe)}（−${money(sl.orderSaved || 0)}）</div>` : ''}
+        </div>` : ''}
+        ${sl.change != null ? `<div style="font-size:12px;color:var(--muted);margin-top:3px">收 ${money(sl.cashGiven)} · 找 ${money(sl.change)}</div>` : ''}
       </div>
       <div class="amt">${off > 0 ? `<s>${money(lineGross)}</s>${money(tot)}` : money(tot)}</div>
       <button class="del" onclick="delSale('${sl.id}')" title="取消單">✕</button>
@@ -1861,7 +1986,19 @@ function reportText(){
       const off = (sl.discount != null) ? sl.discount : Math.max(0, lineGross - tot);
       const chg = sl.change != null ? `（收 ${money(sl.cashGiven)} 找 ${money(sl.change)}）` : '';
       const offTxt = off > 0 ? `（原價 ${money(lineGross)} 優惠 −${money(off)}）` : '';
-      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}${chg}${offTxt}｜${sl.lines.map(l=>`${l.name}×${l.qty}`).join('、')}`);
+      L.push(`${timeOf(sl.time)} ${money(tot)} ${sl.payMethod||'現金'}${chg}${offTxt}`);
+      sl.lines.forEach(l => {
+        const g = l.gross != null ? l.gross : l.unitPrice * l.qty;
+        const d = l.discount || 0;
+        const n = l.net != null ? l.net : g - d;
+        L.push(`   · ${l.name} ×${l.qty}　${d > 0 ? `${money(g)} → ${money(n)}` : money(g)}`);
+      });
+      if(sl.promos && sl.promos.length){
+        sl.promos.forEach(pr => L.push(`   ↳ 優惠：${pr}`));
+      }
+      if(sl.orderZhe && sl.orderZhe < 100){
+        L.push(`   ↳ 全單 ${zheLabel(sl.orderZhe)} −${money(sl.orderSaved || 0)}`);
+      }
     });
   }
   return L.join('\n');
