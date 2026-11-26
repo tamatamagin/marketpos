@@ -636,11 +636,26 @@ function compressImage(file, maxSide=760, quality=0.72, format='jpeg'){
    ========================================================= */
 function render(){
   renderTop();
-  if(tab === 'sell'){ renderSell(); }
-  else if(tab === 'prod'){ renderProd(); }
-  else if(tab === 'set'){ renderSet(); }
-  else { renderSum(); }
-  renderBottom();
+  try{
+    if(tab === 'sell'){ renderSell(); }
+    else if(tab === 'prod'){ renderProd(); }
+    else if(tab === 'set'){ renderSet(); }
+    else { renderSum(); }
+  }catch(e){
+    // 有咩資料令畫面畫唔到，就講出嚟（唔好靜靜雞留住上一個分頁）
+    console.error('render 出錯', tab, e);
+    const v = $('#view');
+    if(v) v.innerHTML = `<div class="setsec" style="margin-top:14px">
+      <h3 style="color:var(--danger)">呢頁畫唔到</h3>
+      <div style="font-size:13px;line-height:1.6;word-break:break-all">
+        分頁：<b>${esc(tab)}</b><br>
+        錯誤：<code style="font-size:12px">${esc(String(e && e.message || e))}</code>
+      </div>
+      <button class="btn-ghost" style="margin-top:10px" onclick="exportData()">先匯出備份</button>
+      <div class="hint" style="margin-top:8px">將呢個畫面影俾我，就知係邊件資料出事。</div>
+    </div>`;
+  }
+  try{ renderBottom(); }catch(e){ console.error('renderBottom 出錯', e); }
 }
 
 function renderTop(){
@@ -694,7 +709,17 @@ function renderBottom(){
 const navBtn = (id, ic, lb) =>
   `<button class="${tab===id?'on':''}" onclick="go('${id}')"><span class="ic">${ic}</span>${lb}</button>`;
 
-function go(t){ tab = t; render(); }
+function go(t){
+  tab = t;
+  try{ history.replaceState(null, '', '#' + t); }catch(e){}
+  render();
+}
+
+// 由網址 #set 直接開某個分頁（方便用電腦／教人）
+function tabFromHash(){
+  const h = String(location.hash || '').replace('#', '').trim();
+  return ['sell','prod','sum','set'].includes(h) ? h : null;
+}
 
 /* ---------- 設定 ---------- */
 function renderSet(){
@@ -2173,13 +2198,11 @@ $('#restorepick').addEventListener('change', e => {
       if(!o || !Array.isArray(o.products)) throw new Error('格式唔啱');
       const np = o.products.length, ns = Array.isArray(o.sales) ? o.sales.length : 0;
       if(!confirm(`還原備份？\n${np} 件貨品、${ns} 張單\n\n現有資料會被覆蓋。`)) return;
-      S = {
-        products: o.products,
-        sales: Array.isArray(o.sales) ? o.sales : [],
-        stallName: o.stallName || '我的檔口'
-      };
-      if(!save()) return;
-      cart.clear(); render(); toast(`已還原 ${np} 件貨品`);
+      // 備份要完整還原（優惠、收款碼、付款方式都要）
+      localStorage.setItem(KEY, JSON.stringify(o));
+      load();                      // 用同一套正規化邏輯讀入
+      cart.clear(); render();
+      toast(`已還原 ${np} 件貨品`);
     }catch(err){
       toast('備份檔讀唔到，確認係之前下載嘅 .json');
     }
@@ -2189,7 +2212,12 @@ $('#restorepick').addEventListener('change', e => {
 
 /* ---------- 開機 ---------- */
 load();
+tab = tabFromHash() || tab;
 render();
+window.addEventListener('hashchange', () => {
+  const h = tabFromHash();
+  if(h && h !== tab){ tab = h; render(); }
+});
 window.addEventListener('keydown', e => { if(e.key === 'Escape') closeOverlay(); });
 
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
