@@ -529,6 +529,9 @@ function load(){
   S.products.forEach(p => { if(p.sortOrder == null) p.sortOrder = 0; });
   // 冇任何付款方式啟用 → 退回全部（唔可以開唔到單）
   if(!Array.isArray(S.enabledPays) || !S.enabledPays.length) S.enabledPays = ALL_PAYS.slice();
+  // 舊版優惠格式（單貨品 {productId,qty}）→ 一律升級成 items 陣列
+  // 唔升級嘅話 renderSet 會爆（b.items.map），calcCart 又會靜靜雞跳過
+  ensurePromo();
 }
 function save(){
   try{
@@ -727,7 +730,7 @@ function renderSet(){
   const on = PAYS();
   const qrSet = (S.qrCodes || {});
   const qrCount = QR_PAYS.filter(m => qrSet[m]).length;
-  const promo = S.promo || { orderZhe: 100, bundles: [] };
+  const promo = ensurePromo();          // 順手升級舊格式，唔會再有 undefined.map
   const bundles = Array.isArray(promo.bundles) ? promo.bundles : [];
 
   // 付款方式勾選
